@@ -1,0 +1,20 @@
+# Credentials. Never commit. Runtime reads Secrets Manager; local dev reads ~/.anchor/env.
+*.env
+.env*
+*.pem
+*.key
+credentials.json
+
+# Build output
+/bin/
+/dist/
+*.zip
+
+# Go
+*.test
+*.out
+coverage.*
+
+# Local scratch
+/tmp/
+.DS_Store
