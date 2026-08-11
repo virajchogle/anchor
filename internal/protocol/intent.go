@@ -215,19 +215,11 @@ type MemoryWrite struct {
 	Embedding store.Vector
 }
 
-// ClusterEffect is the world-state mutation that commits alongside the action.
-// It is optional; not every action changes a tracked cluster.
-type ClusterEffect struct {
-	ClusterID    string
-	DesiredNodes int
-	LastAction   string
-}
-
 // Commit describes everything phase 3 writes in a single transaction.
 type Commit struct {
 	IdemKey string
 	Receipt *verify.Receipt
-	Cluster *ClusterEffect
+	Cluster *verify.ClusterEffect
 	Memory  MemoryWrite
 }
 

@@ -78,9 +78,21 @@ type Verdict struct {
 	Reason string
 }
 
-// TypedAction is the contract every action must satisfy. Execute and Verify are
-// deliberately on the same interface: an author adding a new action type cannot
-// get past the compiler without writing a way to check whether it happened.
+// ClusterEffect is the world-state mutation an action implies. It is derived
+// from the action's arguments rather than from its result, so the reconciler can
+// reconstruct it for an intent whose originating process died.
+//
+// A nil ClusterEffect means the action does not touch tracked cluster state.
+type ClusterEffect struct {
+	ClusterID    string
+	DesiredNodes int
+	LastAction   string
+}
+
+// TypedAction is the contract every action must satisfy. Execute, Verify, and
+// Effect are deliberately on the same interface: an author adding a new action
+// type cannot get past the compiler without supplying a way to check whether it
+// happened and a statement of what it changes.
 type TypedAction[A any] interface {
 	// Type is the stable action_type string persisted in action_intents. It
 	// participates in the idempotency key, so changing it orphans existing rows.
@@ -89,24 +101,43 @@ type TypedAction[A any] interface {
 	// Execute performs the external call. It runs in phase 2, outside any
 	// database transaction, and may leave the world changed even when it
 	// returns an error. That possibility is the entire reason Verify exists.
-	Execute(ctx context.Context, args A) (*Receipt, error)
+	//
+	// idemKey is the intent's primary key. Implementations should hand it to
+	// the external system as an idempotency token wherever the API accepts one,
+	// because that is what later lets Verify attribute an operation to this
+	// specific call rather than merely observing that the world looks right.
+	Execute(ctx context.Context, args A, idemKey string) (*Receipt, error)
 
 	// Verify queries the external system for ground truth about whether this
-	// action took effect. priorRef is the external_ref recorded on the intent,
-	// which is empty when the process died before recording one.
+	// action took effect.
+	//
+	// idemKey is the same token handed to Execute. It is the strongest lookup
+	// key a verifier has, because an external operation carrying our token is
+	// attributable to this call; world state that merely looks correct is not.
+	// priorRef is the external_ref recorded on the intent, which is empty when
+	// the process died before it could record one.
 	//
 	// Implementations must return Unknown rather than guessing. Preferring a
 	// confident wrong answer here is how an agent's history diverges from
 	// reality, which is the failure this project exists to prevent.
-	Verify(ctx context.Context, args A, priorRef string) (Verdict, error)
+	Verify(ctx context.Context, args A, idemKey, priorRef string) (Verdict, error)
+
+	// Effect states the world-state change this action implies, derived purely
+	// from its arguments. The reconciler calls it when recovering an orphaned
+	// intent, where the originating process is gone and the only surviving
+	// record of what was intended is the args column of the intent row.
+	//
+	// Return nil for actions that do not mutate tracked cluster state.
+	Effect(args A) *ClusterEffect
 }
 
 // action is the type-erased form held by the registry, so that actions with
 // different argument types can live in one map.
 type action struct {
 	typ     string
-	execute func(ctx context.Context, raw json.RawMessage) (*Receipt, error)
-	verify  func(ctx context.Context, raw json.RawMessage, priorRef string) (Verdict, error)
+	execute func(ctx context.Context, raw json.RawMessage, idemKey string) (*Receipt, error)
+	verify  func(ctx context.Context, raw json.RawMessage, idemKey, priorRef string) (Verdict, error)
+	effect  func(raw json.RawMessage) (*ClusterEffect, error)
 }
 
 // Registry maps action_type strings to their executor and verifier.
@@ -148,19 +179,19 @@ func Register[A any](r *Registry, a TypedAction[A]) error {
 
 	r.actions[typ] = action{
 		typ: typ,
-		execute: func(ctx context.Context, raw json.RawMessage) (*Receipt, error) {
+		execute: func(ctx context.Context, raw json.RawMessage, idemKey string) (*Receipt, error) {
 			args, err := decode(raw)
 			if err != nil {
 				return nil, err
 			}
-			return a.Execute(ctx, args)
+			return a.Execute(ctx, args, idemKey)
 		},
-		verify: func(ctx context.Context, raw json.RawMessage, priorRef string) (Verdict, error) {
+		verify: func(ctx context.Context, raw json.RawMessage, idemKey, priorRef string) (Verdict, error) {
 			args, err := decode(raw)
 			if err != nil {
 				return Verdict{}, err
 			}
-			v, err := a.Verify(ctx, args, priorRef)
+			v, err := a.Verify(ctx, args, idemKey, priorRef)
 			if err != nil {
 				return Verdict{}, err
 			}
@@ -171,6 +202,13 @@ func Register[A any](r *Registry, a TypedAction[A]) error {
 					"verify: action %q returned Unknown without a Reason", typ)
 			}
 			return v, nil
+		},
+		effect: func(raw json.RawMessage) (*ClusterEffect, error) {
+			args, err := decode(raw)
+			if err != nil {
+				return nil, err
+			}
+			return a.Effect(args), nil
 		},
 	}
 	return nil
@@ -189,19 +227,19 @@ var errUnregistered = "verify: no action registered for type %q; " +
 	"every action_type in action_intents must have a verifier"
 
 // Execute dispatches phase 2 for the given action type.
-func (r *Registry) Execute(ctx context.Context, typ string, args json.RawMessage) (*Receipt, error) {
+func (r *Registry) Execute(ctx context.Context, typ string, args json.RawMessage, idemKey string) (*Receipt, error) {
 	r.mu.RLock()
 	a, ok := r.actions[typ]
 	r.mu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf(errUnregistered, typ)
 	}
-	return a.execute(ctx, args)
+	return a.execute(ctx, args, idemKey)
 }
 
 // Verify dispatches ground-truth verification for the given action type. The
 // reconciler calls this for every intent it claims.
-func (r *Registry) Verify(ctx context.Context, typ string, args json.RawMessage, priorRef string) (Verdict, error) {
+func (r *Registry) Verify(ctx context.Context, typ string, args json.RawMessage, idemKey, priorRef string) (Verdict, error) {
 	r.mu.RLock()
 	a, ok := r.actions[typ]
 	r.mu.RUnlock()
@@ -211,7 +249,18 @@ func (r *Registry) Verify(ctx context.Context, typ string, args json.RawMessage,
 		// abandoning a possibly-applied change.
 		return Verdict{}, fmt.Errorf(errUnregistered, typ)
 	}
-	return a.verify(ctx, args, priorRef)
+	return a.verify(ctx, args, idemKey, priorRef)
+}
+
+// Effect reconstructs the world-state mutation implied by an intent's arguments.
+func (r *Registry) Effect(typ string, args json.RawMessage) (*ClusterEffect, error) {
+	r.mu.RLock()
+	a, ok := r.actions[typ]
+	r.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf(errUnregistered, typ)
+	}
+	return a.effect(args)
 }
 
 // Types lists registered action types in sorted order, for startup logging and
