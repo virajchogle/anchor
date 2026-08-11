@@ -2,9 +2,7 @@ package protocol_test
 
 import (
 	"context"
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -14,112 +12,6 @@ import (
 	"github.com/virajchogle/anchor/internal/fakeworld"
 	"github.com/virajchogle/anchor/internal/protocol"
 )
-
-// defaultTestDB points at the local insecure node used during development. CI
-// and the Cloud cluster override it with ANCHOR_TEST_DB_URL.
-const defaultTestDB = "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
-
-func testDBURL() string {
-	if v := os.Getenv("ANCHOR_TEST_DB_URL"); v != "" {
-		return v
-	}
-	return defaultTestDB
-}
-
-// newTestDB creates a fresh database, applies db/schema.sql, and returns a pool.
-//
-// Each test gets its own database rather than truncating shared tables, because
-// the reconciler's claim scan is global: leftover PENDING intents from another
-// test would be claimed by this one and quietly change the result.
-func newTestDB(t *testing.T) (*pgxpool.Pool, string) {
-	t.Helper()
-	ctx := context.Background()
-
-	admin, err := pgxpool.New(ctx, testDBURL())
-	if err != nil {
-		t.Skipf("no CockroachDB at %s: %v", testDBURL(), err)
-	}
-	defer admin.Close()
-	if err := admin.Ping(ctx); err != nil {
-		t.Skipf("no CockroachDB at %s: %v", testDBURL(), err)
-	}
-
-	dbName := "anchor_test_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
-	if _, err := admin.Exec(ctx, "CREATE DATABASE "+dbName); err != nil {
-		t.Fatalf("create test database: %v", err)
-	}
-
-	url := swapDatabase(testDBURL(), dbName)
-	pool, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Fatalf("connect to test database: %v", err)
-	}
-
-	schema, err := os.ReadFile(filepath.Join("..", "..", "db", "schema.sql"))
-	if err != nil {
-		t.Fatalf("read schema: %v", err)
-	}
-	// Statements are applied one at a time so a failure names the statement.
-	for _, stmt := range splitSQL(string(schema)) {
-		if _, err := pool.Exec(ctx, stmt); err != nil {
-			t.Fatalf("applying schema statement:\n%s\nerror: %v", stmt, err)
-		}
-	}
-
-	t.Cleanup(func() {
-		pool.Close()
-		cleanup, err := pgxpool.New(context.Background(), testDBURL())
-		if err != nil {
-			return
-		}
-		defer cleanup.Close()
-		_, _ = cleanup.Exec(context.Background(), "DROP DATABASE IF EXISTS "+dbName+" CASCADE")
-	})
-
-	return pool, url
-}
-
-func swapDatabase(url, dbName string) string {
-	slash := strings.LastIndex(url, "/")
-	q := strings.Index(url[slash:], "?")
-	if q < 0 {
-		return url[:slash+1] + dbName
-	}
-	return url[:slash+1] + dbName + url[slash+q:]
-}
-
-// splitSQL splits on semicolons that terminate a statement, respecting the
-// single-quoted literals that appear in the TTL and CHECK clauses.
-func splitSQL(s string) []string {
-	var out []string
-	var cur strings.Builder
-	inQuote := false
-
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case c == '\'':
-			inQuote = !inQuote
-			cur.WriteByte(c)
-		case c == '-' && i+1 < len(s) && s[i+1] == '-' && !inQuote:
-			for i < len(s) && s[i] != '\n' {
-				i++
-			}
-			cur.WriteByte('\n')
-		case c == ';' && !inQuote:
-			if stmt := strings.TrimSpace(cur.String()); stmt != "" {
-				out = append(out, stmt)
-			}
-			cur.Reset()
-		default:
-			cur.WriteByte(c)
-		}
-	}
-	if stmt := strings.TrimSpace(cur.String()); stmt != "" {
-		out = append(out, stmt)
-	}
-	return out
-}
 
 // seed inserts the agent, cluster, and open episode that an incident starts from.
 // The episode exists before phase 1 because idem_key hashes its id.

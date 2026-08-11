@@ -12,6 +12,7 @@ import (
 
 	"github.com/virajchogle/anchor/internal/fakeworld"
 	"github.com/virajchogle/anchor/internal/protocol"
+	"github.com/virajchogle/anchor/internal/testsupport"
 	"github.com/virajchogle/anchor/internal/verify"
 )
 
@@ -35,7 +36,7 @@ func run(t *testing.T, timeout time.Duration, name string, args ...string) strin
 // time.
 func TestChaos_CrashBetweenExecuteAndCommit(t *testing.T) {
 	ctx := context.Background()
-	pool, dbURL := newTestDB(t)
+	pool, dbURL := testsupport.NewDB(t)
 	agentID, episodeID := seed(t, pool, "cluster-chaos", 3)
 
 	world := fakeworld.New(worldPath(t))
@@ -151,7 +152,7 @@ func TestChaos_CrashBetweenExecuteAndCommit(t *testing.T) {
 // told the action already happened rather than performing it again.
 func TestChaos_RerunAfterRecoveryDoesNotReact(t *testing.T) {
 	ctx := context.Background()
-	pool, dbURL := newTestDB(t)
+	pool, dbURL := testsupport.NewDB(t)
 	agentID, episodeID := seed(t, pool, "cluster-rerun", 3)
 
 	world := fakeworld.New(worldPath(t))
