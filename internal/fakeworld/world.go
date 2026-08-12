@@ -200,9 +200,10 @@ func (a ScaleAction) Verify(ctx context.Context, args ScaleArgs, idemKey, priorR
 }
 
 func (a ScaleAction) Effect(args ScaleArgs) *verify.ClusterEffect {
+	nodes := args.Nodes
 	return &verify.ClusterEffect{
 		ClusterID:    args.ClusterID,
-		DesiredNodes: args.Nodes,
+		DesiredNodes: &nodes,
 		LastAction:   a.Type(),
 	}
 }

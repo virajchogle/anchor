@@ -288,9 +288,13 @@ UPDATE action_intents
        resolved_at = now(), lease_owner = NULL
  WHERE idem_key = $1 AND state = 'PENDING'`
 
+// COALESCE so an action that does not change node count leaves it alone. version
+// still advances, because something did happen to this cluster.
 const mutateCluster = `
 UPDATE managed_clusters
-   SET desired_nodes = $2, last_action = $3, version = version + 1
+   SET desired_nodes = COALESCE($2, desired_nodes),
+       last_action = $3,
+       version = version + 1
  WHERE cluster_id = $1`
 
 // The episode is UPDATEd rather than INSERTed because it was created at incident

@@ -84,8 +84,11 @@ type Verdict struct {
 //
 // A nil ClusterEffect means the action does not touch tracked cluster state.
 type ClusterEffect struct {
-	ClusterID    string
-	DesiredNodes int
+	ClusterID string
+	// DesiredNodes is nil for actions that do not change node count. A plain int
+	// would silently overwrite the tracked value with zero for every action that
+	// is not a scale, which would corrupt world state on an unrelated success.
+	DesiredNodes *int
 	LastAction   string
 }
 
