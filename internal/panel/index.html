@@ -186,6 +186,22 @@ input:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .runhdr{padding:2px 18px 12px;display:flex;gap:14px;flex-wrap:wrap;align-items:baseline}
 .runhdr .sym{font-size:15px;font-weight:640}
 .runhdr .meta{color:var(--ink-3);font-size:12px}
+.cmp{border:1px solid var(--line);border-radius:10px;margin-bottom:16px;overflow:hidden}
+.cmp .hd{padding:13px 16px;border-bottom:1px solid var(--line);background:var(--plane)}
+.cmp .hd b{font-size:14px;font-weight:640}
+.cmp .hd p{margin:5px 0 0;font-size:12.5px;color:var(--ink-2)}
+.cmp .cols{display:grid;grid-template-columns:1fr 1fr}
+.cmp .col{padding:15px 16px}
+.cmp .col+.col{border-left:1px solid var(--line)}
+.cmp .who{font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:9px}
+.cmp .big{font-size:30px;font-weight:650;letter-spacing:-.8px;line-height:1;
+  font-variant-numeric:tabular-nums}
+.cmp .unit{font-size:12px;color:var(--ink-3);margin-left:6px;font-weight:500}
+.cmp .good .big{color:var(--good)} .cmp .bad .big{color:var(--critical)}
+.cmp .note{margin-top:9px;font-size:12.5px;color:var(--ink-2);line-height:1.5}
+.cmp .ts{padding:9px 16px;border-top:1px solid var(--line);color:var(--ink-3);font-size:11.5px}
+@media(max-width:700px){.cmp .cols{grid-template-columns:1fr}.cmp .col+.col{border-left:none;border-top:1px solid var(--line)}}
 .decide{margin-top:12px;padding:14px;border:1px solid var(--warning);border-radius:9px;
   background:var(--warning-bg)}
 .decide h5{margin:0 0 4px;font-size:13px;font-weight:700;color:var(--warning)}
@@ -217,6 +233,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:-1px}
     <a href="#/overview" data-v="overview"><span class="ic">◧</span>Overview</a>
     <a href="#/incidents" data-v="incidents"><span class="ic">◈</span>Incidents<span class="cnt" id="c-inc"></span></a>
     <a href="#/actions" data-v="actions"><span class="ic">▤</span>Actions<span class="cnt" id="c-act"></span></a>
+    <a href="#/compare" data-v="compare"><span class="ic">⚖</span>Head to head</a>
     <div class="grp">Memory</div>
     <a href="#/search" data-v="search"><span class="ic">⌕</span>Recall search</a>
     <a href="#/playbooks" data-v="playbooks"><span class="ic">❑</span>Playbooks<span class="cnt" id="c-pb"></span></a>
@@ -281,6 +298,15 @@ input:focus{outline:2px solid var(--accent);outline-offset:-1px}
         <h2 id="dtitle">Incident trace</h2>
         <p class="cap" id="dsub"></p>
         <div class="trace" id="trace"></div>
+      </div>
+    </section>
+
+    <section class="view" data-v="compare">
+      <div class="card"><h2>Anchor versus the standard architecture</h2>
+        <p class="cap">Both implementations act on the same external API and are killed at the same
+          point by a real process exit. These are recorded measurements from <code>cmd/compare</code>,
+          not a description of what should happen.</p>
+        <div class="body" id="cmp"></div>
       </div>
     </section>
 
@@ -370,6 +396,7 @@ const pct=v=>Math.max(0,Math.min(100,v*100));
 
 const META={
  live:['Live run','Watch the three-phase protocol advance as the agent works.'],
+ compare:['Head to head','The same failure run against both architectures, measured rather than argued.'],
  overview:['Overview','Live state of the agent, its memory, and whether anything is unaccounted for.'],
  incidents:['Incidents','Every incident the agent has handled. Select a row for its full trace.'],
  actions:['Actions','The durable intent log. Each row was written before the world changed.'],
@@ -683,15 +710,44 @@ async function loadLive(){
   }
 }
 
+async function loadCompare(){
+  const box=$('#cmp');
+  let rows; try{rows=await (await fetch('/api/comparison')).json()}catch(e){return}
+  if(!rows||!rows.length){
+    box.innerHTML='<div class="empty">no measurement recorded yet. Run <code>go run ./cmd/compare</code></div>';
+    return;
+  }
+  box.innerHTML=rows.map(r=>`<div class="cmp">
+    <div class="hd"><b>${esc(r.scenario)}</b><p>${esc(r.description)}</p></div>
+    <div class="cols">
+      <div class="col ${r.anchor_ok?'good':'bad'}">
+        <div class="who">Anchor</div>
+        <div><span class="big">${r.anchor_ops}</span><span class="unit">external operation(s)</span></div>
+        <div class="note">${esc(r.anchor_note)}</div>
+      </div>
+      <div class="col ${r.control_ok?'good':'bad'}">
+        <div class="who">Control &mdash; relational store plus a separate vector database</div>
+        <div><span class="big">${r.control_ops}</span><span class="unit">external operation(s)</span></div>
+        <div class="note">${esc(r.control_note)}</div>
+      </div>
+    </div>
+    <div class="ts">measured ${esc(String(r.ran_at).slice(0,19))} by cmd/compare</div>
+  </div>`).join('');
+}
+
 async function load(){
   try{const r=await fetch('/api/state');if(!r.ok)throw new Error('HTTP '+r.status);render(await r.json())}
   catch(e){$('#railst').className='st bad';$('#railst').lastElementChild.textContent='panel offline'}
 }
-route(); load(); loadLive();
+route(); load(); loadLive(); loadCompare();
 setInterval(load,5000);
 // The live view polls faster, but only while it is the visible one.
 setInterval(()=>{ if(location.hash.replace('#/','')==='live'||!location.hash) loadLive(); },1200);
-addEventListener('hashchange',()=>{ if(location.hash.replace('#/','')==='live') loadLive(); });
+addEventListener('hashchange',()=>{
+  const v=location.hash.replace('#/','');
+  if(v==='live') loadLive();
+  if(v==='compare') loadCompare();
+});
 $('#at').value=localISO(new Date(Date.now()-5*60000));
 </script>
 </body>

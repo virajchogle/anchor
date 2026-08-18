@@ -111,3 +111,22 @@ CREATE TABLE IF NOT EXISTS managed_clusters (
   last_action   STRING,
   version       INT NOT NULL DEFAULT 0
 );
+
+-- Results of the head-to-head experiment against the control architecture.
+--
+-- Written by cmd/compare, which runs both implementations against the same
+-- external API and the same crash point, killing real processes. The panel
+-- reads this table rather than recomputing, so what a reviewer sees on screen
+-- is a recorded measurement with a timestamp, not a claim rendered as a table.
+CREATE TABLE IF NOT EXISTS comparison_runs (
+  run_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ran_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  scenario        STRING NOT NULL,
+  description     STRING NOT NULL,
+  anchor_ops      INT NOT NULL,
+  anchor_ok       BOOL NOT NULL,
+  anchor_note     STRING NOT NULL,
+  control_ops     INT NOT NULL,
+  control_ok      BOOL NOT NULL,
+  control_note    STRING NOT NULL
+);

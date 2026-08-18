@@ -79,6 +79,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/incident", s.handleIncident)
 	mux.HandleFunc("GET /api/live", s.handleLive)
 	mux.HandleFunc("POST /api/resolve", s.handleResolve)
+	mux.HandleFunc("GET /api/comparison", s.handleComparison)
 	mux.Handle("GET /", noStore(http.FileServer(http.FS(assets))))
 	return s.withLogging(mux)
 }
@@ -904,4 +905,58 @@ UPDATE episodes SET status = 'resolved', expires_at = NULL
 	s.log.Info("escalation resolved by operator",
 		"idem_key", req.IdemKey, "decision", req.Decision)
 	writeJSON(w, map[string]string{"status": "resolved", "state": state})
+}
+
+// ---------------------------------------------------------------------------
+// Head-to-head against the control architecture.
+// ---------------------------------------------------------------------------
+
+type ComparisonRow struct {
+	Scenario    string `json:"scenario"`
+	Description string `json:"description"`
+	RanAt       string `json:"ran_at"`
+	AnchorOps   int    `json:"anchor_ops"`
+	AnchorOK    bool   `json:"anchor_ok"`
+	AnchorNote  string `json:"anchor_note"`
+	ControlOps  int    `json:"control_ops"`
+	ControlOK   bool   `json:"control_ok"`
+	ControlNote string `json:"control_note"`
+}
+
+// handleComparison returns the most recent measurement per scenario.
+//
+// The panel displays recorded results rather than recomputing on request. The
+// experiment kills real processes and takes minutes, and a page that silently
+// re-ran it would be showing something different from what the timestamp claims.
+func (s *Server) handleComparison(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	rows, err := s.db.Query(ctx, `
+SELECT DISTINCT ON (scenario)
+       scenario, description, ran_at::STRING,
+       anchor_ops, anchor_ok, anchor_note,
+       control_ops, control_ok, control_note
+  FROM comparison_runs
+ ORDER BY scenario, ran_at DESC`)
+	if err != nil {
+		// The table may not exist on an older deployment; an empty list is a
+		// better answer than a broken page.
+		writeJSON(w, []ComparisonRow{})
+		return
+	}
+	defer rows.Close()
+
+	out := []ComparisonRow{}
+	for rows.Next() {
+		var c ComparisonRow
+		if err := rows.Scan(&c.Scenario, &c.Description, &c.RanAt,
+			&c.AnchorOps, &c.AnchorOK, &c.AnchorNote,
+			&c.ControlOps, &c.ControlOK, &c.ControlNote); err != nil {
+			writeJSON(w, out)
+			return
+		}
+		out = append(out, c)
+	}
+	writeJSON(w, out)
 }
