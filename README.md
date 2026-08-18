@@ -4,6 +4,8 @@
 
 > You cannot achieve exactly-once against a non-idempotent external API by retrying. Retry gets you at-least-once. You get exactly-once by pairing a durable intent log with an external verifier, and that intent log has to commit in the same transaction as the memory write, or the agent's history diverges from reality.
 
+**Live demo: https://5fokjzhq73.execute-api.us-east-1.amazonaws.com**
+
 Anchor is an autonomous on-call agent for CockroachDB Cloud clusters. It diagnoses
 incidents, takes real remediation actions through the ccloud CLI, and accumulates
 institutional memory so the third incident of a class resolves faster than the first.
@@ -41,7 +43,8 @@ row points at the file and function that satisfies it.
 | Service | Where | What it does |
 |---|---|---|
 | **Amazon Bedrock** | [`internal/bedrock/embed.go`](internal/bedrock/embed.go) | Titan Text Embeddings V2 at 1024 dimensions generates every embedding written to CockroachDB. Returned width is asserted at the call site so a misconfigured model names itself instead of failing inside a commit. |
-| **AWS Lambda** | [`cmd/anchord/main.go`](cmd/anchord/main.go) | Runs the agent and serves the observability panel behind a Function URL. One binary, two runtimes; the HTTP handler is identical locally and deployed. |
+| **AWS Lambda** | [`cmd/anchord/main.go`](cmd/anchord/main.go) | Runs the agent and serves the observability panel. One binary, two runtimes; the HTTP handler is identical locally and deployed. |
+| **API Gateway** | [`deploy/deploy.sh`](deploy/deploy.sh) | Fronts the Lambda as an HTTP API. Lambda Function URLs are blocked by default on new AWS accounts, so the deploy falls back to API Gateway, which uses the identical payload format 2.0 event and needs no code change. |
 | **CloudWatch** | [`internal/panel/panel.go`](internal/panel/panel.go) | Structured JSON logs carrying request id, route, status, and latency. Memory content is never logged, by construction rather than by redaction. |
 | **Secrets Manager** | [`cmd/anchord/main.go`](cmd/anchord/main.go), [`deploy/deploy.sh`](deploy/deploy.sh) | The database credential is read from Secrets Manager at boot, so it never appears in a Lambda environment variable, the console, or a `describe-function` response. |
 
@@ -146,6 +149,12 @@ go test ./...
 
 # 4. The panel
 go run ./cmd/anchord     # http://localhost:8080
+
+# 5. A real incident end to end: Bedrock embeddings, a real ccloud action,
+#    verification against the real audit log, and consolidation into a playbook.
+#    Requires AWS credentials and `ccloud auth login`.
+ccloud auth login
+CCLOUD_CLUSTER_ID=<id> go run ./cmd/demo -incidents 3
 ```
 
 Optional, and each is independent:
