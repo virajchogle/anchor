@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/virajchogle/anchor/internal/config"
 )
 
 func main() {
@@ -18,6 +20,7 @@ func main() {
 		log.Fatal("usage: anchorctl <migrate|check> [schema.sql]\n" +
 			"reads ANCHOR_DB_URL from the environment")
 	}
+	config.LoadLocalEnv()
 	url := os.Getenv("ANCHOR_DB_URL")
 	if url == "" {
 		log.Fatal("anchorctl: ANCHOR_DB_URL is not set")

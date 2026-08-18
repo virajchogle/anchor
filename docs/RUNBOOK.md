@@ -9,10 +9,12 @@ in order and the recording writes itself.
 
 ```sh
 cd ~/Desktop/crdbxaws
-source ~/.anchor/env
-ccloud auth whoami          # should print your org
-curl -s $DEMO/api/health    # should print {"status":"ok"}
+ccloud auth whoami   # should print your org
 ```
+
+The demo commands read `~/.anchor/env` themselves, so there is nothing to source
+and nothing to forget mid-recording. An explicitly set variable still wins if you
+need to override one.
 
 If `ccloud auth whoami` says you are logged out, run `ccloud auth login`.
 
@@ -28,6 +30,9 @@ printf 'DELETE FROM action_intents;\nDELETE FROM playbooks;\nDELETE FROM episode
 go run ./cmd/anchorctl migrate /tmp/clean.sql
 go run ./cmd/demo -incidents 3          # ~90s, real Bedrock + real ccloud
 ```
+
+Leave the browser on **Live run** for the whole recording. It animates on its own
+while you talk, so you never have to touch it on camera.
 
 That leaves 3 incidents, 1 playbook, and a green "Memory matches reality" banner.
 

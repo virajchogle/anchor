@@ -19,6 +19,7 @@ import (
 
 	"github.com/virajchogle/anchor/internal/bedrock"
 	"github.com/virajchogle/anchor/internal/ccloud"
+	"github.com/virajchogle/anchor/internal/config"
 	"github.com/virajchogle/anchor/internal/memory"
 	"github.com/virajchogle/anchor/internal/protocol"
 	"github.com/virajchogle/anchor/internal/verify"
@@ -38,6 +39,7 @@ func main() {
 	escalate := flag.Bool("escalate", false,
 		"run a delete whose effect is not attributable from world state, so the "+
 			"verifier returns Unknown and escalates to a human instead of guessing")
+	config.LoadLocalEnv()
 	flag.Parse()
 
 	ctx := context.Background()

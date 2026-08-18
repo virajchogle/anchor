@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/virajchogle/anchor/internal/bedrock"
+	anchorcfg "github.com/virajchogle/anchor/internal/config"
 	"github.com/virajchogle/anchor/internal/panel"
 )
 
@@ -30,6 +31,7 @@ func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	ctx := context.Background()
 
+	anchorcfg.LoadLocalEnv()
 	url, err := databaseURL(ctx)
 	if err != nil {
 		log.Error("resolving database credentials", "error", err)
