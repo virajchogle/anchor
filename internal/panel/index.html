@@ -619,7 +619,7 @@ async function loadLive(){
   hdr.innerHTML=`<span class="sym">${esc(trunc(d.symptom,72))}</span>
     <span class="meta">${esc(d.action_type||'no action yet')} ·
     ${d.recalled} prior episode(s) available · started ${esc(String(d.started_at).slice(0,19))}</span>`;
-  pipe.innerHTML=d.phases.map((p,i)=>{
+  const html=d.phases.map((p,i)=>{
     const badge = p.state==='alert' ? '<span class="badge">memory diverged</span>'
       : p.state==='escalated' ? '<span class="badge">needs a human</span>' : '';
     const glyph = p.state==='done' ? '&#10003;' : (PH_ICON[p.key]||(i+1));
@@ -639,6 +639,26 @@ async function loadLive(){
     return `<div class="ph ${esc(p.state)}"><div class="bub">${glyph}</div>
       <div><h4>${esc(p.label)}${badge}</h4><p>${esc(p.detail)}</p>${decide}</div></div>`;
   }).join('');
+
+  // Only touch the DOM when something actually changed. This view polls every
+  // 1.2s, and rewriting innerHTML unconditionally destroys the note field the
+  // operator is typing into, which made the decision box impossible to use.
+  if (html !== pipe.dataset.rendered) {
+    const prior = pipe.querySelector('#note');
+    const keep = prior ? {value: prior.value, focused: document.activeElement === prior,
+                          start: prior.selectionStart, end: prior.selectionEnd} : null;
+    pipe.innerHTML = html;
+    pipe.dataset.rendered = html;
+    // Carry the half-typed reason across a re-render rather than losing it.
+    const next = pipe.querySelector('#note');
+    if (next && keep) {
+      next.value = keep.value;
+      if (keep.focused) {
+        next.focus();
+        try { next.setSelectionRange(keep.start, keep.end); } catch (e) {}
+      }
+    }
+  }
 
   pipe.querySelectorAll('.decide button[data-d]').forEach(b=>{
     b.onclick=async()=>{
