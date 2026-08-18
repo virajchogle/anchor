@@ -67,6 +67,12 @@ Where no attributable proof exists, the verdict is **Unknown** and a human is
 asked. That third answer is what keeps the agent from either doubling an action
 or writing a false history.
 
+## Architecture
+
+<p align="center">
+  <img src="docs/img/architecture.png" alt="How the agent, CockroachDB and AWS interact" width="100%">
+</p>
+
 ## The experiment
 
 <p align="center">

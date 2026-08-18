@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900">
+<rect width="1600" height="900" fill="#161920"/><rect width="1600" height="6" fill="#3987e5"/>
+<text x="50" y="62" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="33" font-weight="680" fill="#ffffff" text-anchor="start">Anchor: how the agent, CockroachDB and AWS interact</text>
+<text x="50" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="18" font-weight="400" fill="#b9bcc4" text-anchor="start">Steps 1 to 3 are the protocol. Step 3 is a single serializable transaction, which is what a separate vector database cannot offer.</text>
+<rect x="40" y="130" width="400" height="540" rx="16" fill="#161920" stroke="#3987e5" stroke-width="2"/>
+<text x="62" y="166" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#3987e5" text-anchor="start">AWS</text>
+<rect x="62" y="186" width="356" height="132" rx="12" fill="#1c2028" stroke="#3987e5" stroke-width="2"/>
+<text x="84" y="222" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="23" font-weight="640" fill="#ffffff" text-anchor="start">AWS Lambda</text>
+<text x="84" y="250" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#7d818b" text-anchor="start">cmd/anchord</text>
+<text x="84" y="282" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="18" font-weight="400" fill="#b9bcc4" text-anchor="start">agent · reconciler · console</text>
+<text x="84" y="306" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#7d818b" text-anchor="start">one binary, two runtimes</text>
+<rect x="62" y="336" width="356" height="96" rx="12" fill="#1c2028" stroke="#d95926" stroke-width="2"/>
+<text x="84" y="370" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="22" font-weight="640" fill="#ffffff" text-anchor="start">Amazon Bedrock</text>
+<text x="84" y="398" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#b9bcc4" text-anchor="start">Titan V2 · 1024 dimensions</text>
+<rect x="62" y="450" width="170" height="92" rx="12" fill="#1c2028" stroke="#2b303b" stroke-width="2"/>
+<text x="82" y="482" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="18" font-weight="600" fill="#ffffff" text-anchor="start">Secrets Mgr</text>
+<text x="82" y="512" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#7d818b" text-anchor="start">DB credential</text>
+<rect x="248" y="450" width="170" height="92" rx="12" fill="#1c2028" stroke="#2b303b" stroke-width="2"/>
+<text x="268" y="482" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="18" font-weight="600" fill="#ffffff" text-anchor="start">CloudWatch</text>
+<text x="268" y="512" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#7d818b" text-anchor="start">JSON logs</text>
+<rect x="62" y="560" width="356" height="88" rx="12" fill="#1c2028" stroke="#2b303b" stroke-width="2"/>
+<text x="84" y="594" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="20" font-weight="600" fill="#ffffff" text-anchor="start">API Gateway</text>
+<text x="84" y="624" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#7d818b" text-anchor="start">serves the public console</text>
+<rect x="560" y="130" width="540" height="540" rx="16" fill="#161920" stroke="#0ca30c" stroke-width="2.5"/>
+<text x="584" y="166" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#0ca30c" text-anchor="start">COCKROACHDB CLOUD</text>
+<rect x="600" y="186" width="478" height="88" rx="12" fill="#1c2028" stroke="#d03b3b" stroke-width="2"/>
+<text x="622" y="222" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="22" font-weight="640" fill="#ffffff" text-anchor="start">action_intents</text>
+<text x="622" y="252" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#b9bcc4" text-anchor="start">written before acting</text>
+<rect x="600" y="292" width="478" height="104" rx="12" fill="#1c2028" stroke="#3987e5" stroke-width="2"/>
+<text x="622" y="328" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="22" font-weight="640" fill="#ffffff" text-anchor="start">episodes</text>
+<text x="622" y="358" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#b9bcc4" text-anchor="start">VECTOR(1024) · TTL · pinned once bound</text>
+<rect x="600" y="414" width="230" height="80" rx="12" fill="#1c2028" stroke="#2b303b" stroke-width="2"/>
+<text x="620" y="446" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="19" font-weight="600" fill="#ffffff" text-anchor="start">playbooks</text>
+<text x="620" y="474" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#7d818b" text-anchor="start">provenance</text>
+<rect x="848" y="414" width="230" height="80" rx="12" fill="#1c2028" stroke="#2b303b" stroke-width="2"/>
+<text x="868" y="446" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#ffffff" text-anchor="start">managed_clusters</text>
+<text x="868" y="474" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#7d818b" text-anchor="start">world state</text>
+<rect x="600" y="512" width="478" height="76" rx="12" fill="#1c2028" stroke="#0ca30c" stroke-width="2"/>
+<text x="622" y="544" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="18" font-weight="600" fill="#ffffff" text-anchor="start">VECTOR INDEX (scope_key, status, embedding)</text>
+<text x="622" y="570" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#b9bcc4" text-anchor="start">vector_cosine_ops · prefix-filtered</text>
+<text x="584" y="626" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="19" font-weight="680" fill="#0ca30c" text-anchor="start">3 · one serializable transaction</text>
+<text x="584" y="652" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#b9bcc4" text-anchor="start">intent + world state + embedding, or nothing</text>
+<path d="M580 190 L568 190 L568 490 L580 490" stroke="#0ca30c" stroke-width="6" fill="none"/>
+<rect x="1220" y="130" width="340" height="400" rx="16" fill="#161920" stroke="#fab219" stroke-width="2"/>
+<text x="1242" y="166" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#fab219" text-anchor="start">CONTROL PLANE</text>
+<rect x="1242" y="186" width="296" height="104" rx="12" fill="#1c2028" stroke="#fab219" stroke-width="2"/>
+<text x="1264" y="222" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="22" font-weight="640" fill="#ffffff" text-anchor="start">ccloud CLI</text>
+<text x="1264" y="252" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#b9bcc4" text-anchor="start">the action surface</text>
+<text x="1264" y="276" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#7d818b" text-anchor="start">real SQL users</text>
+<rect x="1242" y="308" width="296" height="124" rx="12" fill="#1c2028" stroke="#fab219" stroke-width="2"/>
+<text x="1264" y="344" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="21" font-weight="640" fill="#ffffff" text-anchor="start">Audit log</text>
+<text x="1264" y="372" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#b9bcc4" text-anchor="start">unique operation id</text>
+<text x="1264" y="396" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#b9bcc4" text-anchor="start">payload carries OUR id</text>
+<text x="1264" y="420" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#7d818b" text-anchor="start">source: CLI vs UI</text>
+<text x="1242" y="478" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="18" font-weight="680" fill="#fab219" text-anchor="start">attribution, not observation</text>
+<text x="1242" y="502" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#b9bcc4" text-anchor="start">proof that THIS intent ran</text>
+<rect x="1220" y="566" width="340" height="104" rx="12" fill="#1c2028" stroke="#2b303b" stroke-width="2"/>
+<text x="1242" y="602" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="21" font-weight="640" fill="#ffffff" text-anchor="start">Operator</text>
+<text x="1242" y="630" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#b9bcc4" text-anchor="start">settles escalations the agent</text>
+<text x="1242" y="654" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#b9bcc4" text-anchor="start">refused to guess at</text>
+<path d="M418 230 L556 230" stroke="#3987e5" stroke-width="2.5" fill="none" marker-end="url(#m3987e5)"/>
+<text x="430" y="218" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#3987e5" text-anchor="start">1 · write intent</text>
+<path d="M418 384 L488 384 L488 340 L596 340" stroke="#d95926" stroke-width="2.5" fill="none" marker-end="url(#md95926)"/>
+<text x="430" y="372" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#d95926" text-anchor="start">embed</text>
+<path d="M1078 226 L1216 226" stroke="#d03b3b" stroke-width="2.5" fill="none" marker-end="url(#md03b3b)"/>
+<text x="1088" y="214" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#d03b3b" text-anchor="start">2 · execute</text>
+<path d="M1238 370 L1150 370 L1150 250 L1082 250" stroke="#fab219" stroke-width="2.5" fill="none" marker-end="url(#mfab219)"/>
+<text x="1096" y="300" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#fab219" text-anchor="start">3a · verify</text>
+<path d="M596 550 L520 550 L520 300 L418 300" stroke="#0ca30c" stroke-width="2.5" fill="none" marker-end="url(#m0ca30c)"/>
+<text x="430" y="288" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#0ca30c" text-anchor="start">recall</text>
+<path d="M1390 530 L1390 562" stroke="#7d818b" stroke-width="2" fill="none" marker-end="url(#m7d818b)"/>
+<path d="M1360 674 L1360 706 L470 706 L470 606 L422 606" stroke="#7d818b" stroke-width="2" fill="none" stroke-dasharray="7 6" marker-end="url(#m7d818b)"/>
+<text x="640" y="698" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#7d818b" text-anchor="start">operator reads the console over API Gateway</text>
+<defs>
+<marker id="m3987e5" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto"><path d="M0 0 L11 5.5 L0 11 z" fill="#3987e5"/></marker>
+<marker id="md95926" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto"><path d="M0 0 L11 5.5 L0 11 z" fill="#d95926"/></marker>
+<marker id="md03b3b" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto"><path d="M0 0 L11 5.5 L0 11 z" fill="#d03b3b"/></marker>
+<marker id="mfab219" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto"><path d="M0 0 L11 5.5 L0 11 z" fill="#fab219"/></marker>
+<marker id="m0ca30c" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto"><path d="M0 0 L11 5.5 L0 11 z" fill="#0ca30c"/></marker>
+<marker id="m7d818b" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto"><path d="M0 0 L11 5.5 L0 11 z" fill="#7d818b"/></marker>
+</defs>
+<text x="50" y="742" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="19" font-weight="400" fill="#b9bcc4" text-anchor="start">If phase 3 were two transactions, the memory write could fail alone and the agent's history would diverge from what it did.</text>
+<text x="50" y="776" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="19" font-weight="400" fill="#d03b3b" text-anchor="start">We shipped that architecture as a control: same crash, it performs 2 external operations instead of 1.</text>
+<text x="1550" y="842" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#7d818b" text-anchor="end">github.com/virajchogle/anchor</text>
+</svg>
