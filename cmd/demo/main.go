@@ -35,6 +35,9 @@ func main() {
 	reconcile := flag.Bool("reconcile", false,
 		"run the reconciler: verify orphaned intents against the real audit log and settle them")
 	pace := flag.Duration("pace", 0, "pause between steps so a viewer can follow along")
+	escalate := flag.Bool("escalate", false,
+		"run a delete whose effect is not attributable from world state, so the "+
+			"verifier returns Unknown and escalates to a human instead of guessing")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -64,8 +67,16 @@ func main() {
 	agentID := ensureAgent(ctx, pool)
 	coord := protocol.NewCoordinator(pool, reg, agentID, 2*time.Minute)
 
+	verify.MustRegister[ccloud.DeleteSQLUserArgs](reg,
+		ccloud.DeleteSQLUserAction{Client: client, Lookback: 2 * time.Hour})
+
 	if *reconcile {
 		runReconciler(ctx, pool, reg, coord, embedder, agentID, *pace)
+		return
+	}
+
+	if *escalate {
+		runEscalation(ctx, pool, client, reg, coord, embedder, clusterID)
 		return
 	}
 
@@ -260,7 +271,62 @@ func runReconciler(ctx context.Context, pool *pgxpool.Pool, reg *verify.Registry
 		fmt.Printf("  %s is now %s, external_ref=%q\n",
 			cur.IdemKey[:16], cur.State, cur.ExternalRef)
 	}
+	if stats.Escalated > 0 {
+		fmt.Printf("\n%d intent(s) could not be verified and stay PENDING for a human.\n", stats.Escalated)
+		fmt.Println("The action was NOT repeated, and no outcome was invented.")
+		fmt.Println("Refusing to guess is the correct behaviour, not a failure.")
+		return
+	}
 	fmt.Println("\nThe action was NOT repeated. Memory now matches reality.")
+}
+
+// runEscalation demonstrates the case the whole three-valued design exists for.
+//
+// A delete leaves nothing behind. Once the user is gone, its absence is equally
+// consistent with "we deleted it", "an operator deleted it", and "it never
+// existed". If the audit log has not caught up, no amount of looking at the
+// world resolves that. The correct answer is Unknown, and the correct behaviour
+// is to stop and ask a human.
+func runEscalation(ctx context.Context, pool *pgxpool.Pool, client *ccloud.Client,
+	reg *verify.Registry, coord *protocol.Coordinator, embedder *bedrock.Embedder, clusterID string) {
+
+	// Provision a user so there is something real to revoke.
+	seedKey := fmt.Sprintf("escalation-demo-%d", time.Now().Unix())
+	username := ccloud.UsernameFor(fmt.Sprintf("%x", seedKey))
+	fmt.Printf("provisioning %s so there is something real to revoke\n", username)
+	pw := fmt.Sprintf("Dg%d!aZq", time.Now().UnixNano()%1000000)
+	if err := client.CreateSQLUser(ctx, clusterID, username, pw); err != nil {
+		log.Fatalf("escalate: creating the user to revoke: %v", err)
+	}
+
+	symptom := fmt.Sprintf("incident closed, revoking diagnostic access %s", username)
+	episodeID := openEpisode(ctx, pool, embedder, symptom)
+
+	args := ccloud.DeleteSQLUserArgs{
+		ClusterID: clusterID, Username: username, Reason: "incident closed",
+	}
+	intent, disp, err := coord.Intend(ctx, episodeID, ccloud.ActionDeleteSQLUserType, args)
+	if err != nil {
+		log.Fatalf("escalate: phase 1: %v", err)
+	}
+	fmt.Printf("phase 1: %s  idem_key=%s…\n", disp, intent.IdemKey[:16])
+
+	if _, err := reg.Execute(ctx, ccloud.ActionDeleteSQLUserType, intent.Args, intent.IdemKey); err != nil {
+		log.Fatalf("escalate: phase 2: %v", err)
+	}
+	fmt.Printf("phase 2: revoked %s\n", username)
+
+	fmt.Println()
+	fmt.Println("  *** SIMULATING A CRASH before the result was recorded ***")
+	fmt.Println()
+	fmt.Println("  The user is gone. The intent is still PENDING.")
+	fmt.Println("  Now the reconciler must decide what happened, and it cannot look at")
+	fmt.Println("  the world to find out: an absent user proves nothing about who removed it.")
+	fmt.Println()
+	fmt.Println("  Run:  go run ./cmd/demo -reconcile")
+	fmt.Println()
+	fmt.Println("  Expect UNKNOWN, not a guess. The intent stays PENDING and is escalated")
+	fmt.Println("  to a human. That refusal is the point of the design.")
 }
 
 func ensureAgent(ctx context.Context, pool *pgxpool.Pool) uuid.UUID {

@@ -129,6 +129,9 @@ type Totals struct {
 	Pending   int `json:"pending"`
 	Failed    int `json:"failed"`
 	Playbooks int `json:"playbooks"`
+	// Escalated counts intents the verifier could not settle. They stay PENDING
+	// deliberately: the system refuses to guess and asks a human instead.
+	Escalated int `json:"escalated"`
 }
 
 type Episode struct {
@@ -334,8 +337,11 @@ SELECT (SELECT count(*) FROM episodes),
        (SELECT count(*) FROM action_intents WHERE state='COMMITTED'),
        (SELECT count(*) FROM action_intents WHERE state='PENDING'),
        (SELECT count(*) FROM action_intents WHERE state='FAILED'),
-       (SELECT count(*) FROM playbooks)`).
-		Scan(&t.Episodes, &t.Pinned, &t.Committed, &t.Pending, &t.Failed, &t.Playbooks)
+       (SELECT count(*) FROM playbooks),
+       (SELECT count(*) FROM action_intents
+         WHERE state='PENDING' AND outcome->>'disposition' = 'UNKNOWN')`).
+		Scan(&t.Episodes, &t.Pinned, &t.Committed, &t.Pending, &t.Failed,
+			&t.Playbooks, &t.Escalated)
 	return t, err
 }
 

@@ -224,10 +224,20 @@ func TestTimeTravel_ShowsPriorBelief(t *testing.T) {
 
 	epID := insertResolved(t, pool, agentID, "original belief", 5)
 
-	// Let the write settle, then mark the instant we want to reconstruct.
-	time.Sleep(600 * time.Millisecond)
-	before := time.Now()
-	time.Sleep(600 * time.Millisecond)
+	// Mark the instant using the DATABASE clock, not the Go process clock.
+	//
+	// AS OF SYSTEM TIME compares against MVCC commit timestamps, which come from
+	// the cluster. Taking the reference point from time.Now() compares two
+	// different clocks, and under load the insert's commit timestamp can land
+	// after a wall-clock instant captured later, so the snapshot sees no episode
+	// and the test fails intermittently. Reading now() from the same connection
+	// removes the skew entirely.
+	time.Sleep(400 * time.Millisecond)
+	var before time.Time
+	if err := pool.QueryRow(ctx, `SELECT now()`).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(400 * time.Millisecond)
 
 	if _, err := pool.Exec(ctx,
 		`UPDATE episodes SET narrative='revised after further investigation', salience=0.95

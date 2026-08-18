@@ -489,7 +489,16 @@ function render(s){
   window.__last=s;
   const inFlight=(s.intents||[]).filter(i=>i.state==='PENDING'&&!i.external_ref);
   const al=$('#alert'),rs=$('#railst');
-  if(inFlight.length){
+  const esc_n=(s.totals||{}).escalated||0;
+  if(esc_n){
+    al.className='diverged';
+    al.innerHTML=`<div class="t"><span class="dot"></span>${esc_n} action(s) escalated to a human</div>
+      <div class="d">The verifier could not establish whether these actions took effect, so it
+      returned <b>Unknown</b> rather than guessing. Guessing "done" would fabricate history;
+      guessing "not done" would invite a second, destructive action. The intents stay PENDING
+      until a person decides.</div>`;
+    rs.className='st bad';rs.lastElementChild.textContent=esc_n+' need a human';
+  } else if(inFlight.length){
     al.className='diverged';
     al.innerHTML=`<div class="t"><span class="dot"></span>${inFlight.length} action(s) in flight, unrecorded</div>
       <div class="d">The external world may already have changed and the agent's memory does not know.
@@ -506,11 +515,13 @@ function render(s){
   const t=s.totals||{};
   $('#c-inc').textContent=t.episodes??''; $('#c-act').textContent=t.committed??'';
   $('#c-pb').textContent=t.playbooks??'';
-  $('#railmeta').innerHTML=`${t.pinned??0} pinned · ${t.failed??0} need a human`;
+  $('#railmeta').innerHTML=`${t.pinned??0} pinned · ${(t.escalated??0)+(t.failed??0)} need a human`;
   $('#tiles').innerHTML=[
     ['Episodes',t.episodes,''],['Pinned forever',t.pinned,''],
     ['Actions committed',t.committed,''],['Playbooks learned',t.playbooks,''],
-    ['In flight',t.pending,t.pending?'bad':'ok'],['Needs a human',t.failed,t.failed?'bad':'ok']
+    ['In flight',t.pending,t.pending?'bad':'ok'],
+    ['Escalated to a human',t.escalated,t.escalated?'bad':'ok'],
+    ['Failed',t.failed,t.failed?'bad':'ok']
   ].map(([k,v,c])=>`<div class="tile ${c}"><b>${v??0}</b><span>${k}</span></div>`).join('');
 
   growthChart(s.growth); evidenceChart(s.evidence);

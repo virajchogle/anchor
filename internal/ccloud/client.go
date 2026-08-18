@@ -163,6 +163,9 @@ const (
 	ActionUpdateCluster = "AUDIT_LOG_ACTION_UPDATE_CLUSTER"
 	ActionCreateCluster = "AUDIT_LOG_ACTION_CREATE_CLUSTER"
 
+	// EvidenceNone marks a verdict that found no attributable evidence at all.
+	EvidenceNone = "none"
+
 	// SourceCLI marks an action taken through the CLI, which is how Anchor acts.
 	SourceCLI = "AUDIT_LOG_SOURCE_CLI"
 	// SourceUI marks an action taken by a human in the web console.
