@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,8 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/virajchogle/anchor/internal/panel"
@@ -26,9 +29,9 @@ func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	ctx := context.Background()
 
-	url := os.Getenv("ANCHOR_DB_URL")
-	if url == "" {
-		log.Error("ANCHOR_DB_URL is not set")
+	url, err := databaseURL(ctx)
+	if err != nil {
+		log.Error("resolving database credentials", "error", err)
 		os.Exit(1)
 	}
 
@@ -71,6 +74,35 @@ func main() {
 		log.Error("server stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+// databaseURL resolves the connection string.
+//
+// Deployed, it comes from AWS Secrets Manager so the credential is never in an
+// environment variable visible in the Lambda console, in a task definition, or
+// in a process listing. Locally it falls back to ANCHOR_DB_URL, which is read
+// from a file outside the repository.
+func databaseURL(ctx context.Context) (string, error) {
+	if secretID := os.Getenv("ANCHOR_DB_SECRET"); secretID != "" {
+		cfg, err := config.LoadDefaultConfig(ctx)
+		if err != nil {
+			return "", fmt.Errorf("loading AWS config: %w", err)
+		}
+		out, err := secretsmanager.NewFromConfig(cfg).GetSecretValue(ctx,
+			&secretsmanager.GetSecretValueInput{SecretId: &secretID})
+		if err != nil {
+			return "", fmt.Errorf("reading secret %s: %w", secretID, err)
+		}
+		if out.SecretString == nil || *out.SecretString == "" {
+			return "", fmt.Errorf("secret %s is empty", secretID)
+		}
+		return *out.SecretString, nil
+	}
+
+	if url := os.Getenv("ANCHOR_DB_URL"); url != "" {
+		return url, nil
+	}
+	return "", fmt.Errorf("set ANCHOR_DB_SECRET (deployed) or ANCHOR_DB_URL (local)")
 }
 
 // functionURLAdapter bridges a Lambda Function URL event to a net/http handler.

@@ -43,6 +43,7 @@ row points at the file and function that satisfies it.
 | **Amazon Bedrock** | [`internal/bedrock/embed.go`](internal/bedrock/embed.go) | Titan Text Embeddings V2 at 1024 dimensions generates every embedding written to CockroachDB. Returned width is asserted at the call site so a misconfigured model names itself instead of failing inside a commit. |
 | **AWS Lambda** | [`cmd/anchord/main.go`](cmd/anchord/main.go) | Runs the agent and serves the observability panel behind a Function URL. One binary, two runtimes; the HTTP handler is identical locally and deployed. |
 | **CloudWatch** | [`internal/panel/panel.go`](internal/panel/panel.go) | Structured JSON logs carrying request id, route, status, and latency. Memory content is never logged, by construction rather than by redaction. |
+| **Secrets Manager** | [`cmd/anchord/main.go`](cmd/anchord/main.go), [`deploy/deploy.sh`](deploy/deploy.sh) | The database credential is read from Secrets Manager at boot, so it never appears in a Lambda environment variable, the console, or a `describe-function` response. |
 
 ---
 
@@ -166,6 +167,25 @@ go test ./internal/control/ -v
 
 Credentials are read from the environment. Nothing is committed; `.gitignore`
 blocks `*.env`. Deployed, they come from AWS Secrets Manager.
+
+## Deploy to AWS
+
+One idempotent command. It creates the IAM role, stores the connection string in
+Secrets Manager, builds an arm64 Lambda bundle, deploys it behind a Function URL,
+and prints the demo URL.
+
+```sh
+source ~/.anchor/env
+./deploy/deploy.sh
+```
+
+The execution role is least-privilege by construction: `GetSecretValue` on
+exactly one secret ARN, and `bedrock:InvokeModel` on exactly the two model ARNs
+in use. Re-running updates in place rather than duplicating resources.
+
+```sh
+aws logs tail /aws/lambda/anchor-panel --follow    # structured JSON logs
+```
 
 ## Security
 
