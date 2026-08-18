@@ -205,8 +205,8 @@ func (a CreateSQLUserAction) Verify(ctx context.Context, args CreateSQLUserArgs,
 }
 
 // Effect records that the cluster was touched without asserting a node count.
-func (a CreateSQLUserAction) Effect(args CreateSQLUserArgs) *verify.ClusterEffect {
-	return &verify.ClusterEffect{
+func (a CreateSQLUserAction) Effect(args CreateSQLUserArgs) *verify.WorldEffect {
+	return &verify.WorldEffect{
 		ClusterID:  args.ClusterID,
 		LastAction: a.Type(),
 		// DesiredNodes stays nil: provisioning a user changes no capacity.

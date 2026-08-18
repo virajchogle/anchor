@@ -161,7 +161,7 @@ func measureWrites(ctx context.Context, pool *pgxpool.Pool, emb fakeworld.HashEm
 		if err := coord.CommitAtomic(ctx, protocol.Commit{
 			IdemKey: intent.IdemKey,
 			Receipt: &verify.Receipt{ExternalRef: "bench", Outcome: []byte(`{"bench":true}`)},
-			Cluster: &verify.ClusterEffect{ClusterID: "bench-writes", DesiredNodes: &nodes, LastAction: "scale_cluster"},
+			Cluster: &verify.WorldEffect{ClusterID: "bench-writes", DesiredNodes: &nodes, LastAction: "scale_cluster"},
 			Memory:  protocol.MemoryWrite{EpisodeID: epID, Narrative: "n", Outcome: "resolved", Embedding: vec},
 		}); err != nil {
 			log.Fatalf("bench: phase 3: %v", err)
@@ -241,7 +241,7 @@ func measureContention(ctx context.Context, pool *pgxpool.Pool, emb fakeworld.Ha
 			if err := coord.CommitAtomic(ctx, protocol.Commit{
 				IdemKey: intent.IdemKey,
 				Receipt: &verify.Receipt{ExternalRef: "bench", Outcome: []byte(`{"bench":true}`)},
-				Cluster: &verify.ClusterEffect{ClusterID: "bench-contend", DesiredNodes: &nodes, LastAction: "scale_cluster"},
+				Cluster: &verify.WorldEffect{ClusterID: "bench-contend", DesiredNodes: &nodes, LastAction: "scale_cluster"},
 				Memory:  protocol.MemoryWrite{EpisodeID: epID, Narrative: "n", Outcome: "resolved", Embedding: vec},
 			}); err != nil {
 				var pgErr *pgconn.PgError

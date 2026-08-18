@@ -78,12 +78,16 @@ type Verdict struct {
 	Reason string
 }
 
-// ClusterEffect is the world-state mutation an action implies. It is derived
-// from the action's arguments rather than from its result, so the reconciler can
+// WorldEffect is the world-state mutation an action implies. It is derived from
+// the action's arguments rather than from its result, so the reconciler can
 // reconstruct it for an intent whose originating process died.
 //
-// A nil ClusterEffect means the action does not touch tracked cluster state.
-type ClusterEffect struct {
+// A nil WorldEffect means the action changes no tracked resource, which is the
+// common case outside infrastructure. The payments domain in internal/payments
+// returns nil here: a refund changes a balance held by the payment provider, not
+// state this system tracks. The protocol does not care either way, which is the
+// point of keeping the effect optional.
+type WorldEffect struct {
 	ClusterID string
 	// DesiredNodes is nil for actions that do not change node count. A plain int
 	// would silently overwrite the tracked value with zero for every action that
@@ -131,7 +135,7 @@ type TypedAction[A any] interface {
 	// record of what was intended is the args column of the intent row.
 	//
 	// Return nil for actions that do not mutate tracked cluster state.
-	Effect(args A) *ClusterEffect
+	Effect(args A) *WorldEffect
 }
 
 // action is the type-erased form held by the registry, so that actions with
@@ -140,7 +144,7 @@ type action struct {
 	typ     string
 	execute func(ctx context.Context, raw json.RawMessage, idemKey string) (*Receipt, error)
 	verify  func(ctx context.Context, raw json.RawMessage, idemKey, priorRef string) (Verdict, error)
-	effect  func(raw json.RawMessage) (*ClusterEffect, error)
+	effect  func(raw json.RawMessage) (*WorldEffect, error)
 }
 
 // Registry maps action_type strings to their executor and verifier.
@@ -206,7 +210,7 @@ func Register[A any](r *Registry, a TypedAction[A]) error {
 			}
 			return v, nil
 		},
-		effect: func(raw json.RawMessage) (*ClusterEffect, error) {
+		effect: func(raw json.RawMessage) (*WorldEffect, error) {
 			args, err := decode(raw)
 			if err != nil {
 				return nil, err
@@ -256,7 +260,7 @@ func (r *Registry) Verify(ctx context.Context, typ string, args json.RawMessage,
 }
 
 // Effect reconstructs the world-state mutation implied by an intent's arguments.
-func (r *Registry) Effect(typ string, args json.RawMessage) (*ClusterEffect, error) {
+func (r *Registry) Effect(typ string, args json.RawMessage) (*WorldEffect, error) {
 	r.mu.RLock()
 	a, ok := r.actions[typ]
 	r.mu.RUnlock()

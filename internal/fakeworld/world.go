@@ -199,9 +199,9 @@ func (a ScaleAction) Verify(ctx context.Context, args ScaleArgs, idemKey, priorR
 	}, nil
 }
 
-func (a ScaleAction) Effect(args ScaleArgs) *verify.ClusterEffect {
+func (a ScaleAction) Effect(args ScaleArgs) *verify.WorldEffect {
 	nodes := args.Nodes
-	return &verify.ClusterEffect{
+	return &verify.WorldEffect{
 		ClusterID:    args.ClusterID,
 		DesiredNodes: &nodes,
 		LastAction:   a.Type(),

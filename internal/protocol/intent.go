@@ -219,7 +219,7 @@ type MemoryWrite struct {
 type Commit struct {
 	IdemKey string
 	Receipt *verify.Receipt
-	Cluster *verify.ClusterEffect
+	Cluster *verify.WorldEffect
 	Memory  MemoryWrite
 }
 

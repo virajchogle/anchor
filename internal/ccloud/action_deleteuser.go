@@ -155,8 +155,8 @@ func (a DeleteSQLUserAction) lookback() time.Duration {
 
 // Effect records that the cluster was touched. Access revocation changes no
 // capacity, so DesiredNodes stays nil.
-func (a DeleteSQLUserAction) Effect(args DeleteSQLUserArgs) *verify.ClusterEffect {
-	return &verify.ClusterEffect{ClusterID: args.ClusterID, LastAction: a.Type()}
+func (a DeleteSQLUserAction) Effect(args DeleteSQLUserArgs) *verify.WorldEffect {
+	return &verify.WorldEffect{ClusterID: args.ClusterID, LastAction: a.Type()}
 }
 
 var _ verify.TypedAction[DeleteSQLUserArgs] = DeleteSQLUserAction{}
