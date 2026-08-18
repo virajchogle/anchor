@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 380" width="900" height="380" role="img" aria-label="The three-phase protocol and its crash path">
+<rect width="900" height="380" rx="14" fill="#161920"/>
+<text x="32" y="42" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="19" font-weight="650" fill="#ffffff">The exactly-once action protocol</text>
+<text x="32" y="66" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" fill="#b9bcc4">The dotted path is the failure everything else exists to survive.</text>
+
+<!-- happy path boxes -->
+<g>
+  <rect x="32"  y="100" width="180" height="72" rx="10" fill="none" stroke="#3987e5" stroke-width="2"/>
+  <text x="48" y="128" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="700" fill="#3987e5">PHASE 1</text>
+  <text x="48" y="150" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#ffffff">Write the intent</text>
+  <text x="48" y="166" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#7d818b">before acting</text>
+
+  <rect x="252" y="100" width="180" height="72" rx="10" fill="none" stroke="#3987e5" stroke-width="2"/>
+  <text x="268" y="128" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="700" fill="#3987e5">PHASE 2</text>
+  <text x="268" y="150" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#ffffff">Call the API</text>
+  <text x="268" y="166" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#7d818b">carrying the idem key</text>
+
+  <rect x="472" y="100" width="240" height="72" rx="10" fill="none" stroke="#0ca30c" stroke-width="2.5"/>
+  <text x="488" y="128" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="700" fill="#0ca30c">PHASE 3 &#183; ONE TRANSACTION</text>
+  <text x="488" y="150" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#ffffff">intent + world state + memory</text>
+  <text x="488" y="166" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#7d818b">serializable, all or nothing</text>
+
+  <path d="M212 136 L246 136" stroke="#3987e5" stroke-width="2" marker-end="url(#a)"/>
+  <path d="M432 136 L466 136" stroke="#3987e5" stroke-width="2" marker-end="url(#a)"/>
+  <path d="M712 136 L790 136" stroke="#0ca30c" stroke-width="2" marker-end="url(#g)"/>
+  <text x="742" y="126" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#0ca30c">done</text>
+</g>
+
+<!-- crash path -->
+<path d="M342 172 L342 232" stroke="#d03b3b" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#r)"/>
+<text x="352" y="205" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#d03b3b">process dies here</text>
+
+<rect x="200" y="234" width="290" height="62" rx="10" fill="none" stroke="#d03b3b" stroke-width="2"/>
+<text x="216" y="260" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="640" fill="#d03b3b">World changed. Nothing recorded it.</text>
+<text x="216" y="280" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#7d818b">a naive retry acts twice from here</text>
+
+<path d="M490 265 L546 265" stroke="#7d818b" stroke-width="2" marker-end="url(#n)"/>
+<rect x="552" y="234" width="316" height="62" rx="10" fill="none" stroke="#3987e5" stroke-width="2"/>
+<text x="568" y="260" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="640" fill="#ffffff">Reconciler asks the external system</text>
+<text x="568" y="280" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="12" fill="#7d818b">matching an identifier derived from the intent</text>
+
+<path d="M710 234 L710 190" stroke="#0ca30c" stroke-width="2" marker-end="url(#g)"/>
+<text x="720" y="212" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="11.5" fill="#0ca30c">proof &#8594; commit</text>
+
+<path d="M710 296 L710 330" stroke="#fab219" stroke-width="2" marker-end="url(#w)"/>
+<rect x="556" y="332" width="312" height="34" rx="8" fill="none" stroke="#fab219" stroke-width="2"/>
+<text x="572" y="354" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="640" fill="#fab219">no proof &#8594; Unknown, ask a human</text>
+
+<defs>
+<marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 z" fill="#3987e5"/></marker>
+<marker id="g" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 z" fill="#0ca30c"/></marker>
+<marker id="r" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 z" fill="#d03b3b"/></marker>
+<marker id="w" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 z" fill="#fab219"/></marker>
+<marker id="n" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 z" fill="#7d818b"/></marker>
+</defs>
+</svg>

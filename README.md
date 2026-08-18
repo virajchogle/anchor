@@ -4,6 +4,10 @@
 
 > You cannot achieve exactly-once against a non-idempotent external API by retrying. Retry gets you at-least-once. You get exactly-once by pairing a durable intent log with an external verifier, and that intent log has to commit in the same transaction as the memory write, or the agent's history diverges from reality.
 
+<p align="center">
+  <img src="docs/img/protocol.svg" alt="The three-phase protocol and its crash path" width="100%">
+</p>
+
 **Live demo: https://5fokjzhq73.execute-api.us-east-1.amazonaws.com**
 
 Anchor is an autonomous on-call agent for CockroachDB Cloud clusters. It diagnoses
@@ -62,6 +66,36 @@ call rather than to a world that merely looks right.
 Where no attributable proof exists, the verdict is **Unknown** and a human is
 asked. That third answer is what keeps the agent from either doubling an action
 or writing a false history.
+
+## The experiment
+
+<p align="center">
+  <img src="docs/img/comparison.svg" alt="Anchor 1 external operation, control 2" width="100%">
+</p>
+
+Both implementations act on the same external API and are killed at the same
+point by a real process exit. Reproduce it with `go run ./cmd/compare`, or open
+the **Head to head** page on the live demo, which renders the recorded
+measurement with its timestamp.
+
+## The operator console
+
+<p align="center">
+  <img src="docs/img/screenshot-live.png" alt="The live run view showing the protocol advancing" width="100%">
+</p>
+
+The **Live run** view reads every stage from committed database state rather than
+in-process progress, so it stays correct even when the agent that started the
+work has died. Red means the world may have changed and nothing recorded it.
+Amber means the verifier looked and could not tell, and a person decides.
+
+<p align="center">
+  <img src="docs/img/screenshot-recall.png" alt="Live recall search against the vector index" width="100%">
+</p>
+
+**Recall search** runs a real cosine query against the distributed vector index
+and shows similarity, recency and salience separately, so ranking is legible
+rather than asserted.
 
 ---
 
