@@ -47,6 +47,59 @@ Every agent proposes the identical action against the same episode, so all deriv
 
 Committed actions must equal the cluster version. A non-zero lost-update count would mean a committed action left no trace in world state.
 
+
+---
+
+# Same benchmark against CockroachDB Cloud (Basic tier)
+
+Managed, single region, shared cluster. Latencies include network round trips
+from a laptop, so they measure the deployment, not the database in isolation.
+
+- Run at: 2026-08-18T02:48:45Z
+- Server: CockroachDB CCL v26.2.5
+- Region: aws-us-east-1
+
+## Memory write (full phase 3 transaction)
+
+Intent resolution, world-state mutation, and the 1024-dimension embedding committed in one serializable transaction.
+
+| Metric | Value |
+|---|---|
+| Transactions | 100 |
+| Throughput | 10.5 txn/s |
+| p50 | 91.9 ms |
+| p95 | 106.4 ms |
+| p99 | 155.4 ms |
+| min / max | 87.5 ms / 169.1 ms |
+
+## Recall latency (vector index)
+
+Cosine search with both prefix columns constrained, top 20.
+
+| Metric | Value |
+|---|---|
+| Queries | 100 |
+| p50 | 70.0 ms |
+| p95 | 98.0 ms |
+| p99 | 110.1 ms |
+| min / max | 30.0 ms / 117.6 ms |
+
+## Contention: 16 concurrent agents, one logical action
+
+Every agent proposes the identical action against the same episode, so all derive the same idempotency key. Exactly one may act.
+
+| Metric | Value |
+|---|---|
+| Agents | 16 |
+| Committed | 1 |
+| Deduplicated by phase 1 | 15 |
+| Serialization retries (40001) | 0 |
+| Cluster version after run | 1 |
+| **Lost updates** | **0** |
+| Wall clock | 461ms |
+
+Committed actions must equal the cluster version. A non-zero lost-update count would mean a committed action left no trace in world state.
+
 ## Control architecture
 
 The control is measured by test rather than by timing, because its failures are categorical rather than statistical. See `internal/control`:
