@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/virajchogle/anchor/internal/memory"
@@ -50,6 +51,21 @@ func New(db *pgxpool.Pool, log *slog.Logger) *Server {
 	return &Server{db: db, log: log}
 }
 
+// OperatorMode enables the resolve endpoint, which lets a person close an
+// escalation from the page instead of the command line.
+//
+// It is off unless ANCHOR_OPERATOR_MODE=1, because this panel is served without
+// authentication. The public demo deliberately runs with it on so a reviewer can
+// drive the escalation loop themselves; a real deployment would put the page
+// behind SSO and leave this decision to the identity layer.
+//
+// The blast radius is kept deliberately small even when enabled. The endpoint
+// can only move an intent that is already PENDING with an UNKNOWN verdict, which
+// means it can settle a question the agent already refused to answer and nothing
+// else. It cannot create intents, cannot touch a COMMITTED row, and cannot
+// resolve anything the verifier was able to decide on its own.
+func (s *Server) OperatorMode() bool { return os.Getenv("ANCHOR_OPERATOR_MODE") == "1" }
+
 // WithEmbedder enables the live recall endpoint. Without one the panel still
 // serves everything else, so a missing model never takes the page down.
 func (s *Server) WithEmbedder(e Embedder) *Server { s.embed = e; return s }
@@ -62,6 +78,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/timetravel", s.handleTimeTravel)
 	mux.HandleFunc("GET /api/incident", s.handleIncident)
 	mux.HandleFunc("GET /api/live", s.handleLive)
+	mux.HandleFunc("POST /api/resolve", s.handleResolve)
 	mux.Handle("GET /", noStore(http.FileServer(http.FS(assets))))
 	return s.withLogging(mux)
 }
@@ -651,6 +668,10 @@ type LiveResponse struct {
 	Recalled   int     `json:"recalled"`
 	StartedAt  string  `json:"started_at"`
 	Note       string  `json:"note,omitempty"`
+	// Operator reports whether this deployment lets a person settle an
+	// escalation from the page, so the UI does not offer a control that would
+	// be refused.
+	Operator bool `json:"operator_mode"`
 }
 
 // handleLive describes the most recent incident as a phase pipeline.
@@ -701,7 +722,7 @@ SELECT idem_key, action_type, state, coalesce(external_ref,''),
 	resp := LiveResponse{
 		EpisodeID: epID, Symptom: symptom, Status: status,
 		ActionType: actionType, IdemKey: idemKey, Recalled: recalled,
-		StartedAt: createdAt,
+		StartedAt: createdAt, Operator: s.OperatorMode(),
 	}
 
 	mk := func(key, label, st, detail string) Phase {
@@ -787,4 +808,100 @@ func safeCut(s string, n int) string {
 		return s
 	}
 	return s[:n]
+}
+
+type resolveRequest struct {
+	IdemKey  string `json:"idem_key"`
+	Decision string `json:"decision"`
+	Note     string `json:"note"`
+}
+
+func (s *Server) handleResolve(w http.ResponseWriter, r *http.Request) {
+	if !s.OperatorMode() {
+		http.Error(w, "operator mode is disabled; resolve from the CLI with anchorctl",
+			http.StatusForbidden)
+		return
+	}
+
+	var req resolveRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req); err != nil {
+		http.Error(w, "bad request body", http.StatusBadRequest)
+		return
+	}
+
+	var state string
+	switch req.Decision {
+	case "applied":
+		state = "COMMITTED"
+	case "failed":
+		state = "FAILED"
+	default:
+		http.Error(w, "decision must be applied or failed", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Note) == "" {
+		// An escalation exists because nobody could explain what happened. Closing
+		// one without saying why just moves the unexplained state somewhere else.
+		http.Error(w, "a note is required: record why you decided this",
+			http.StatusBadRequest)
+		return
+	}
+	if len(req.Note) > 500 {
+		req.Note = req.Note[:500]
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	outcome, _ := json.Marshal(map[string]string{
+		"disposition": strings.ToUpper(req.Decision),
+		"evidence":    "human_operator",
+		"reason":      req.Note,
+		"resolved_by": "operator via panel",
+	})
+
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	if err != nil {
+		s.fail(w, "resolve", err)
+		return
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	// The WHERE clause is the authorisation. Only an intent the verifier already
+	// gave up on can be settled here.
+	tag, err := tx.Exec(ctx, `
+UPDATE action_intents
+   SET state = $2, outcome = $3::JSONB, resolved_at = now(), lease_owner = NULL
+ WHERE idem_key = $1
+   AND state = 'PENDING'
+   AND outcome->>'disposition' = 'UNKNOWN'`, req.IdemKey, state, outcome)
+	if err != nil {
+		s.fail(w, "resolve", err)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		http.Error(w, "no escalated intent with that key; it may already be resolved",
+			http.StatusNotFound)
+		return
+	}
+
+	// An action confirmed as applied pins its episode, exactly as phase 3 would.
+	if state == "COMMITTED" {
+		if _, err := tx.Exec(ctx, `
+UPDATE episodes SET status = 'resolved', expires_at = NULL
+ WHERE episode_id = (SELECT episode_id FROM action_intents WHERE idem_key = $1)`,
+			req.IdemKey); err != nil {
+			s.fail(w, "resolve", err)
+			return
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		s.fail(w, "resolve", err)
+		return
+	}
+
+	s.log.Info("escalation resolved by operator",
+		"idem_key", req.IdemKey, "decision", req.Decision)
+	writeJSON(w, map[string]string{"status": "resolved", "state": state})
 }

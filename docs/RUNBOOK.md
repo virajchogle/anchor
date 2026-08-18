@@ -117,22 +117,25 @@ something twice or lying in its own history.
 
 ### 4b. Closing the loop (optional, 20 seconds)
 
-An escalation is not a dead end. It is a work item for a person:
+An escalation is not a dead end. It is a work item for a person, and it is
+answered **on the page**.
+
+After `-escalate` and `-reconcile`, the Live run view shows the Verified stage in
+amber with a decision box underneath it: a note field and two buttons, **I
+confirmed it happened** and **I confirmed it did not**. Type a reason, click, and
+the pipeline turns green while you are on camera. No terminal.
+
+Say that it is recorded as `human_operator` evidence, never as machine
+verification, so nobody later mistakes a person's assertion for an audit-log
+fact. Also worth saying: the note is required, because an escalation closed
+without a reason just moves the unexplained state somewhere else.
+
+The same thing is available from the CLI if you prefer:
 
 ```sh
 go run ./cmd/anchorctl escalations
+go run ./cmd/anchorctl resolve <idem_key> applied "audit entry confirms it"
 ```
-
-It prints the intent and the full reason the agent refused to decide. Then the
-operator records their judgement:
-
-```sh
-go run ./cmd/anchorctl resolve <idem_key> applied "audit entry confirms it; I accept authorship"
-```
-
-Point out that it is recorded as `human_operator` evidence, never as machine
-verification, so nobody later mistakes a person's assertion for an audit-log
-fact. The dashboard returns to green.
 
 ### 5. Numbers (2:20 to 2:50)
 

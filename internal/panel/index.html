@@ -186,6 +186,16 @@ input:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .runhdr{padding:2px 18px 12px;display:flex;gap:14px;flex-wrap:wrap;align-items:baseline}
 .runhdr .sym{font-size:15px;font-weight:640}
 .runhdr .meta{color:var(--ink-3);font-size:12px}
+.decide{margin-top:12px;padding:14px;border:1px solid var(--warning);border-radius:9px;
+  background:var(--warning-bg)}
+.decide h5{margin:0 0 4px;font-size:13px;font-weight:700;color:var(--warning)}
+.decide p{margin:0 0 10px;font-size:12.5px;color:var(--ink-2)}
+.decide .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.decide input{flex:1;min-width:240px;font-size:13px;padding:8px 11px}
+.decide button{white-space:nowrap}
+.decide button.yes{background:var(--good);border-color:var(--good);color:#fff;font-weight:600}
+.decide button.no{background:var(--critical);border-color:var(--critical);color:#fff;font-weight:600}
+.decide .msg{margin-top:8px;font-size:12.5px;color:var(--ink-2)}
 .howto{padding:0 18px 18px;color:var(--ink-3);font-size:12.5px;line-height:1.6}
 .howto code{margin-right:4px}
 #tip{position:fixed;pointer-events:none;opacity:0;transition:opacity .1s;background:var(--raised);
@@ -613,9 +623,44 @@ async function loadLive(){
     const badge = p.state==='alert' ? '<span class="badge">memory diverged</span>'
       : p.state==='escalated' ? '<span class="badge">needs a human</span>' : '';
     const glyph = p.state==='done' ? '&#10003;' : (PH_ICON[p.key]||(i+1));
+    // The decision belongs where the question was asked, not in a terminal.
+    const decide = (p.state==='escalated' && d.idem_key) ? `
+      <div class="decide">
+        <h5>You decide</h5>
+        <p>The agent refused to guess. Record what you believe happened, and why.
+           It is stored as an operator judgement, never as machine verification.</p>
+        <div class="row">
+          <input type="text" id="note" placeholder="why you believe this, e.g. the audit entry confirms it">
+          <button class="yes" data-d="applied">I confirmed it happened</button>
+          <button class="no"  data-d="failed">I confirmed it did not</button>
+        </div>
+        <div class="msg" id="dmsg"></div>
+      </div>` : '';
     return `<div class="ph ${esc(p.state)}"><div class="bub">${glyph}</div>
-      <div><h4>${esc(p.label)}${badge}</h4><p>${esc(p.detail)}</p></div></div>`;
+      <div><h4>${esc(p.label)}${badge}</h4><p>${esc(p.detail)}</p>${decide}</div></div>`;
   }).join('');
+
+  pipe.querySelectorAll('.decide button[data-d]').forEach(b=>{
+    b.onclick=async()=>{
+      const note=(pipe.querySelector('#note')?.value||'').trim();
+      const msg=pipe.querySelector('#dmsg');
+      if(!note){ msg.textContent='A note is required. An escalation closed without a reason just moves the unexplained state somewhere else.'; return; }
+      b.disabled=true; msg.textContent='recording…';
+      try{
+        const r=await fetch('/api/resolve',{method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({idem_key:d.idem_key,decision:b.dataset.d,note})});
+        if(!r.ok){ msg.textContent='could not resolve: '+(await r.text()); b.disabled=false; return; }
+        msg.textContent='recorded as operator judgement';
+        loadLive(); load();
+      }catch(e){ msg.textContent='request failed: '+e.message; b.disabled=false; }
+    };
+  });
+  if(d.operator_mode===false){
+    const dec=pipe.querySelector('.decide');
+    if(dec) dec.innerHTML='<h5>Needs a human</h5><p>This deployment is read-only. '+
+      'Resolve from the CLI: <code>anchorctl resolve &lt;key&gt; applied|failed "note"</code></p>';
+  }
 }
 
 async function load(){
