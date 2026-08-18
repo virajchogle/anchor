@@ -18,15 +18,21 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/virajchogle/anchor/internal/fakeworld"
 	"github.com/virajchogle/anchor/internal/memory"
+	"github.com/virajchogle/anchor/internal/protocol"
 	"github.com/virajchogle/anchor/internal/store"
+	"github.com/virajchogle/anchor/internal/verify"
 )
 
 //go:embed index.html
@@ -80,6 +86,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/live", s.handleLive)
 	mux.HandleFunc("POST /api/resolve", s.handleResolve)
 	mux.HandleFunc("GET /api/comparison", s.handleComparison)
+	mux.HandleFunc("POST /api/contention", s.handleContention)
 	mux.Handle("GET /", noStore(http.FileServer(http.FS(assets))))
 	return s.withLogging(mux)
 }
@@ -959,4 +966,173 @@ SELECT DISTINCT ON (scenario)
 		out = append(out, c)
 	}
 	writeJSON(w, out)
+}
+
+// ---------------------------------------------------------------------------
+// Contention: many agents, one action.
+// ---------------------------------------------------------------------------
+
+type ContentionResult struct {
+	Agents       int    `json:"agents"`
+	Committed    int    `json:"committed"`
+	Deduplicated int    `json:"deduplicated"`
+	Busy         int    `json:"busy"`
+	Errors       int    `json:"errors"`
+	Retries      int    `json:"serialization_retries"`
+	LostUpdates  int    `json:"lost_updates"`
+	ElapsedMS    int64  `json:"elapsed_ms"`
+	Note         string `json:"note"`
+}
+
+// handleContention races N agents at the same logical action and reports what
+// happened.
+//
+// It runs against a throwaway episode in its own scope and deletes everything it
+// created afterwards, so a demonstration never pollutes the incident history a
+// reviewer is looking at. The external action is a no-op writing to /dev/null:
+// the property under test is the deduplication and the transaction, not the side
+// effect.
+func (s *Server) handleContention(w http.ResponseWriter, r *http.Request) {
+	if !s.OperatorMode() {
+		http.Error(w, "operator mode is disabled", http.StatusForbidden)
+		return
+	}
+
+	agents := 16
+	if v := r.URL.Query().Get("agents"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 64 {
+			agents = n
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	res, err := s.runContention(ctx, agents)
+	if err != nil {
+		s.fail(w, "contention", err)
+		return
+	}
+	s.log.Info("contention run", "agents", res.Agents, "committed", res.Committed,
+		"deduplicated", res.Deduplicated, "lost_updates", res.LostUpdates)
+	writeJSON(w, res)
+}
+
+func (s *Server) runContention(ctx context.Context, agents int) (*ContentionResult, error) {
+	const scope = "contention-demo"
+	cluster := "contend-" + uuid.NewString()[:8]
+
+	if _, err := s.db.Exec(ctx,
+		`UPSERT INTO managed_clusters (cluster_id, scope_key, desired_nodes) VALUES ($1,$2,3)`,
+		cluster, scope); err != nil {
+		return nil, err
+	}
+
+	vec, err := zeroVector()
+	if err != nil {
+		return nil, err
+	}
+	var epID uuid.UUID
+	if err := s.db.QueryRow(ctx, `
+INSERT INTO episodes (scope_key, status, symptom, narrative, embedding, expires_at)
+VALUES ($1,'open','contention demonstration','opened',$2, now() + INTERVAL '1 hour')
+RETURNING episode_id`, scope, vec).Scan(&epID); err != nil {
+		return nil, err
+	}
+
+	// Everything this creates is removed before returning, in FK-safe order.
+	defer func() {
+		bg := context.Background()
+		_, _ = s.db.Exec(bg, `DELETE FROM action_intents WHERE episode_id=$1`, epID)
+		_, _ = s.db.Exec(bg, `DELETE FROM episodes WHERE episode_id=$1`, epID)
+		_, _ = s.db.Exec(bg, `DELETE FROM agents WHERE name='contention-demo'`)
+		_, _ = s.db.Exec(bg, `DELETE FROM managed_clusters WHERE cluster_id=$1`, cluster)
+	}()
+
+	reg := verify.NewRegistry()
+	if err := verify.Register[fakeworld.ScaleArgs](reg,
+		fakeworld.ScaleAction{World: fakeworld.New(os.DevNull)}); err != nil {
+		return nil, err
+	}
+
+	var committed, deduped, busy, errored, retries int64
+	var wg sync.WaitGroup
+	start := time.Now()
+
+	for i := 0; i < agents; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			agentID := uuid.New()
+			if _, err := s.db.Exec(ctx,
+				`INSERT INTO agents (agent_id,name,scope) VALUES ($1,'contention-demo',ARRAY[$2])`,
+				agentID, scope); err != nil {
+				atomic.AddInt64(&errored, 1)
+				return
+			}
+			coord := protocol.NewCoordinator(s.db, reg, agentID, 2*time.Minute)
+
+			// Every agent proposes the identical logical action, so all of them
+			// derive the same idempotency key and exactly one may proceed.
+			args := fakeworld.ScaleArgs{ClusterID: cluster, Nodes: 9}
+			intent, disp, err := coord.Intend(ctx, epID, "scale_cluster", args)
+			if err != nil {
+				atomic.AddInt64(&errored, 1)
+				return
+			}
+			switch disp {
+			case protocol.Owned:
+			case protocol.Busy:
+				atomic.AddInt64(&busy, 1)
+				return
+			default:
+				atomic.AddInt64(&deduped, 1)
+				return
+			}
+
+			nodes := 9
+			if err := coord.CommitAtomic(ctx, protocol.Commit{
+				IdemKey: intent.IdemKey,
+				Receipt: &verify.Receipt{ExternalRef: "contention", Outcome: []byte(`{"demo":true}`)},
+				Cluster: &verify.WorldEffect{ClusterID: cluster, DesiredNodes: &nodes,
+					LastAction: "scale_cluster"},
+				Memory: protocol.MemoryWrite{EpisodeID: epID, Narrative: "contended",
+					Outcome: "resolved", Embedding: vec},
+			}); err != nil {
+				if store.Classify(err) == store.Retryable {
+					atomic.AddInt64(&retries, 1)
+				}
+				atomic.AddInt64(&errored, 1)
+				return
+			}
+			atomic.AddInt64(&committed, 1)
+		}()
+	}
+	wg.Wait()
+	elapsed := time.Since(start)
+
+	var version int
+	_ = s.db.QueryRow(ctx,
+		`SELECT version FROM managed_clusters WHERE cluster_id=$1`, cluster).Scan(&version)
+
+	res := &ContentionResult{
+		Agents: agents, Committed: int(committed), Deduplicated: int(deduped),
+		Busy: int(busy), Errors: int(errored), Retries: int(retries),
+		LostUpdates: int(committed) - version,
+		ElapsedMS:   elapsed.Milliseconds(),
+	}
+	res.Note = "committed actions must equal the tracked resource version; " +
+		"a non-zero lost-update count would mean a committed action left no trace in world state"
+	return res, nil
+}
+
+// zeroVector is a valid embedding for rows this demonstration creates and then
+// deletes. No model call is needed to measure transaction behaviour.
+func zeroVector() (store.Vector, error) {
+	v := make(store.Vector, store.Dims)
+	for i := range v {
+		v[i] = 0.01
+	}
+	return v, v.Validate()
 }

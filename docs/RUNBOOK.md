@@ -139,6 +139,23 @@ go run ./cmd/anchorctl escalations
 go run ./cmd/anchorctl resolve <idem_key> applied "audit entry confirms it"
 ```
 
+### 4c. Two more pages worth 15 seconds each
+
+**Head to head.** The comparison is a recorded measurement, not a claim. Both
+architectures, same external API, same crash point, real process kills:
+
+```
+crash between acting and recording    anchor 1 op    control 2 ops
+memory write fails, no crash          impossible     world changed, memory empty
+```
+
+Re-measure any time with `go run ./cmd/compare`.
+
+**Contention.** Set agents to 24 and click **Race them**. One square turns green,
+twenty-three go blue, lost updates stays zero. Every agent proposed the identical
+action, so all of them derived the same idempotency key and phase 1 let exactly
+one through. It cleans up after itself and never touches the incident history.
+
 ### 5. Numbers (2:20 to 2:50)
 
 Sidebar → **Time travel**, click "5 minutes ago", show what the agent believed
@@ -159,7 +176,9 @@ Close on the compliance table in the README.
 | Recall similarity 0.846 for a repeat incident | live run, `cmd/demo` |
 | Playbook confidence 0.743 from 3 episodes | live run |
 | Live recall ~250ms | `/api/recall` against CockroachDB Cloud |
-| Control double-acts: 2 operations | `TestControl_DoubleActsOnCrash` |
+| Control double-acts: 2 operations | `TestControl_DoubleActsOnCrash`, and the Head to head page |
+| 24 agents, 1 acted, 0 lost updates | the Contention page, live |
+| A crash does not refund a customer twice | `TestPayments_CrashDoesNotRefundTwice` |
 
 Do not quote anything that is not on this list.
 

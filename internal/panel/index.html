@@ -186,6 +186,15 @@ input:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .runhdr{padding:2px 18px 12px;display:flex;gap:14px;flex-wrap:wrap;align-items:baseline}
 .runhdr .sym{font-size:15px;font-weight:640}
 .runhdr .meta{color:var(--ink-3);font-size:12px}
+.race{display:grid;grid-template-columns:repeat(auto-fill,minmax(26px,1fr));gap:5px;
+  margin:4px 0 16px;max-width:640px}
+.race i{aspect-ratio:1;border-radius:6px;background:var(--grid);display:block;
+  border:1px solid var(--line)}
+.race i.win{background:var(--good);border-color:var(--good)}
+.race i.dedup{background:var(--series-1);border-color:var(--series-1);opacity:.45}
+.race i.err{background:var(--critical);border-color:var(--critical)}
+.rkey{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2);margin-bottom:14px}
+.rkey i{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:6px;vertical-align:-1px}
 .cmp{border:1px solid var(--line);border-radius:10px;margin-bottom:16px;overflow:hidden}
 .cmp .hd{padding:13px 16px;border-bottom:1px solid var(--line);background:var(--plane)}
 .cmp .hd b{font-size:14px;font-weight:640}
@@ -234,6 +243,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:-1px}
     <a href="#/incidents" data-v="incidents"><span class="ic">◈</span>Incidents<span class="cnt" id="c-inc"></span></a>
     <a href="#/actions" data-v="actions"><span class="ic">▤</span>Actions<span class="cnt" id="c-act"></span></a>
     <a href="#/compare" data-v="compare"><span class="ic">⚖</span>Head to head</a>
+    <a href="#/contend" data-v="contend"><span class="ic">⇉</span>Contention</a>
     <div class="grp">Memory</div>
     <a href="#/search" data-v="search"><span class="ic">⌕</span>Recall search</a>
     <a href="#/playbooks" data-v="playbooks"><span class="ic">❑</span>Playbooks<span class="cnt" id="c-pb"></span></a>
@@ -307,6 +317,20 @@ input:focus{outline:2px solid var(--accent);outline-offset:-1px}
           point by a real process exit. These are recorded measurements from <code>cmd/compare</code>,
           not a description of what should happen.</p>
         <div class="body" id="cmp"></div>
+      </div>
+    </section>
+
+    <section class="view" data-v="contend">
+      <div class="card"><h2>Many agents, one action</h2>
+        <p class="cap">Every agent proposes the identical action against the same incident, so all of
+          them derive the same idempotency key. Exactly one may act. This runs for real against the
+          cluster and removes everything it creates afterwards.</p>
+        <div class="searchbar">
+          <label style="align-self:center;color:var(--ink-2);font-size:13px">agents</label>
+          <input type="text" id="nagents" value="16" style="min-width:70px;max-width:90px">
+          <button class="primary" id="crun">Race them</button>
+        </div>
+        <div class="body" id="cres"><div class="empty">no run yet</div></div>
       </div>
     </section>
 
@@ -396,6 +420,7 @@ const pct=v=>Math.max(0,Math.min(100,v*100));
 
 const META={
  live:['Live run','Watch the three-phase protocol advance as the agent works.'],
+ contend:['Contention','Race many agents at one action and see how many get through.'],
  compare:['Head to head','The same failure run against both architectures, measured rather than argued.'],
  overview:['Overview','Live state of the agent, its memory, and whether anything is unaccounted for.'],
  incidents:['Incidents','Every incident the agent has handled. Select a row for its full trace.'],
@@ -709,6 +734,43 @@ async function loadLive(){
       'Resolve from the CLI: <code>anchorctl resolve &lt;key&gt; applied|failed "note"</code></p>';
   }
 }
+
+async function runContention(){
+  const box=$('#cres'), n=parseInt($('#nagents').value,10)||16;
+  box.innerHTML='<div class="empty">racing '+n+' agents…</div>';
+  let d;
+  try{
+    const r=await fetch('/api/contention?agents='+n,{method:'POST'});
+    if(!r.ok){ box.innerHTML='<div class="empty">'+esc(await r.text())+'</div>'; return; }
+    d=await r.json();
+  }catch(e){ box.innerHTML='<div class="empty">request failed: '+esc(e.message)+'</div>'; return; }
+
+  // One square per agent: the winner, the ones phase 1 turned away, and errors.
+  const cells=[];
+  for(let i=0;i<d.committed;i++) cells.push('win');
+  for(let i=0;i<d.deduplicated+d.busy;i++) cells.push('dedup');
+  for(let i=0;i<d.errors;i++) cells.push('err');
+  while(cells.length<d.agents) cells.push('dedup');
+
+  const lost=d.lost_updates;
+  box.innerHTML=`
+    <div class="race">${cells.map(c=>`<i class="${c}"></i>`).join('')}</div>
+    <div class="rkey">
+      <span><i style="background:var(--good)"></i>acted (${d.committed})</span>
+      <span><i style="background:var(--series-1);opacity:.45"></i>turned away by phase 1 (${d.deduplicated+d.busy})</span>
+      ${d.errors?`<span><i style="background:var(--critical)"></i>errors (${d.errors})</span>`:''}
+    </div>
+    <div class="tiles">
+      <div class="tile"><b>${d.agents}</b><span>agents raced</span></div>
+      <div class="tile ok"><b>${d.committed}</b><span>acted</span></div>
+      <div class="tile"><b>${d.deduplicated+d.busy}</b><span>deduplicated</span></div>
+      <div class="tile"><b>${d.serialization_retries}</b><span>40001 retries</span></div>
+      <div class="tile ${lost?'bad':'ok'}"><b>${lost}</b><span>lost updates</span></div>
+      <div class="tile"><b>${d.elapsed_ms}<span class="unit"> ms</span></b><span>wall clock</span></div>
+    </div>
+    <p style="color:var(--ink-2);font-size:12.5px;margin-top:14px;max-width:74ch">${esc(d.note)}</p>`;
+}
+$('#crun').onclick=runContention;
 
 async function loadCompare(){
   const box=$('#cmp');

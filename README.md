@@ -153,6 +153,7 @@ it proves **this** intent ran.
 | The standard architecture *does* double-act | [`TestControl_DoubleActsOnCrash`](internal/control/control_test.go): same incident, same API, same crash point, **2 external operations** |
 | Separate vector store diverges from reality | [`TestControl_MemoryDivergesFromReality`](internal/control/control_test.go): no crash at all, world changed, memory empty, nothing to roll back |
 | The control is not a strawman | [`TestControl_SucceedsWhenNothingFails`](internal/control/control_test.go) |
+| The protocol is not domain-specific | [`internal/payments`](internal/payments/payments_test.go) implements refunds against the same interface with no changes to the coordinator, reconciler, or key derivation. `TestPayments_CrashDoesNotRefundTwice` is the chaos test with money at stake |
 | Verification is attributable, not inferred | [`TestLive_VerifyIsAttributable`](internal/ccloud/action_sqluser_live_test.go): a second intent verifies `NotApplied` even while another intent's user exists on the same cluster |
 | The vector index is actually used | [`TestRecall_UsesVectorIndex`](internal/memory/recall_test.go) asserts on `EXPLAIN` output at 2000 rows |
 | Decay never un-pins a committed episode | [`TestDecay_NeverUnpinsCommittedEpisodes`](internal/memory/lifecycle_test.go) |
