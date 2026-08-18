@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/virajchogle/anchor/internal/bedrock"
 	"github.com/virajchogle/anchor/internal/panel"
 )
 
@@ -52,7 +53,19 @@ func main() {
 	}
 	defer pool.Close()
 
-	handler := panel.New(pool, log).Handler()
+	srv := panel.New(pool, log)
+
+	// Live recall needs an embedding model. If Bedrock is unavailable the panel
+	// still serves everything else, because an observability page that goes dark
+	// when a model is unreachable is worse than one that degrades.
+	if emb, err := bedrock.New(ctx, os.Getenv("AWS_REGION")); err != nil {
+		log.Warn("live recall disabled, embedder unavailable", "error", err)
+	} else {
+		srv = srv.WithEmbedder(emb)
+		log.Info("live recall enabled", "model", emb.Model())
+	}
+
+	handler := srv.Handler()
 
 	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
 		log.Info("starting in Lambda mode")
@@ -65,12 +78,12 @@ func main() {
 		addr = ":8080"
 	}
 	log.Info("serving panel", "addr", addr)
-	srv := &http.Server{
+	httpSrv := &http.Server{
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	if err := srv.ListenAndServe(); err != nil {
+	if err := httpSrv.ListenAndServe(); err != nil {
 		log.Error("server stopped", "error", err)
 		os.Exit(1)
 	}

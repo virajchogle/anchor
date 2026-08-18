@@ -19,15 +19,26 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/virajchogle/anchor/internal/memory"
+	"github.com/virajchogle/anchor/internal/store"
 )
 
 //go:embed index.html
 var assets embed.FS
 
+// Embedder is the subset of the embedding path the panel needs, so live recall
+// can be driven from the browser without the panel depending on Bedrock.
+type Embedder interface {
+	Embed(ctx context.Context, text string) (store.Vector, error)
+}
+
 type Server struct {
-	db  *pgxpool.Pool
-	log *slog.Logger
+	db    *pgxpool.Pool
+	log   *slog.Logger
+	embed Embedder
 }
 
 func New(db *pgxpool.Pool, log *slog.Logger) *Server {
@@ -37,10 +48,17 @@ func New(db *pgxpool.Pool, log *slog.Logger) *Server {
 	return &Server{db: db, log: log}
 }
 
+// WithEmbedder enables the live recall endpoint. Without one the panel still
+// serves everything else, so a missing model never takes the page down.
+func (s *Server) WithEmbedder(e Embedder) *Server { s.embed = e; return s }
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", s.handleState)
 	mux.HandleFunc("GET /api/health", s.handleHealth)
+	mux.HandleFunc("GET /api/recall", s.handleRecall)
+	mux.HandleFunc("GET /api/timetravel", s.handleTimeTravel)
+	mux.HandleFunc("GET /api/incident", s.handleIncident)
 	mux.Handle("GET /", http.FileServer(http.FS(assets)))
 	return s.withLogging(mux)
 }
@@ -393,4 +411,197 @@ func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// ---------------------------------------------------------------------------
+// Live recall. This is the vector index made usable rather than described.
+// ---------------------------------------------------------------------------
+
+type RecallHit struct {
+	EpisodeID  string  `json:"episode_id"`
+	Symptom    string  `json:"symptom"`
+	Narrative  string  `json:"narrative"`
+	Outcome    string  `json:"outcome"`
+	Status     string  `json:"status"`
+	Distance   float64 `json:"distance"`
+	Similarity float64 `json:"similarity"`
+	Recency    float64 `json:"recency"`
+	Salience   float64 `json:"salience"`
+	Score      float64 `json:"score"`
+	CreatedAt  string  `json:"created_at"`
+}
+
+type RecallResponse struct {
+	Query     string      `json:"query"`
+	Scope     string      `json:"scope"`
+	TookMS    int64       `json:"took_ms"`
+	Hits      []RecallHit `json:"hits"`
+	Playbooks []Playbook  `json:"playbooks"`
+	Note      string      `json:"note,omitempty"`
+}
+
+func (s *Server) handleRecall(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	scope := r.URL.Query().Get("scope")
+	if scope == "" {
+		scope = "prod"
+	}
+	if q == "" {
+		writeJSON(w, RecallResponse{Hits: []RecallHit{}, Note: "enter a symptom to search memory"})
+		return
+	}
+	if s.embed == nil {
+		writeJSON(w, RecallResponse{Query: q, Hits: []RecallHit{},
+			Note: "live recall needs an embedding model; set AWS credentials and redeploy"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	st := memory.NewStore(s.db, s.embed)
+	eps, err := st.RecallEpisodes(ctx, memory.Query{
+		ScopeKey: scope, Text: q, K: 8,
+		Statuses: []string{memory.StatusResolved, memory.StatusArchived, memory.StatusOpen},
+	})
+	if err != nil {
+		s.fail(w, "recall", err)
+		return
+	}
+	books, _ := st.RecallPlaybooks(ctx, scope, q, 3)
+
+	resp := RecallResponse{Query: q, Scope: scope, TookMS: time.Since(start).Milliseconds(),
+		Hits: []RecallHit{}, Playbooks: []Playbook{}}
+	for _, e := range eps {
+		resp.Hits = append(resp.Hits, RecallHit{
+			EpisodeID: e.ID.String(), Symptom: e.Symptom, Narrative: e.Narrative,
+			Outcome: e.Outcome, Status: e.Status, Distance: e.Distance,
+			Similarity: e.Similarity, Recency: e.Recency, Salience: e.Salience,
+			Score: e.Score, CreatedAt: e.CreatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	for _, b := range books {
+		steps, _ := json.Marshal(b.Steps)
+		resp.Playbooks = append(resp.Playbooks, Playbook{
+			ID: b.ID.String(), Title: b.Title, Confidence: b.Confidence,
+			DerivedFrom: len(b.DerivedFrom), Steps: string(steps),
+		})
+	}
+	writeJSON(w, resp)
+}
+
+// ---------------------------------------------------------------------------
+// Time travel. What the agent believed at an instant, read from MVCC.
+// ---------------------------------------------------------------------------
+
+type TimeTravelResponse struct {
+	At       string    `json:"at"`
+	Scope    string    `json:"scope"`
+	Beliefs  []Episode `json:"beliefs"`
+	Note     string    `json:"note,omitempty"`
+	NowCount int       `json:"now_count"`
+}
+
+func (s *Server) handleTimeTravel(w http.ResponseWriter, r *http.Request) {
+	scope := r.URL.Query().Get("scope")
+	if scope == "" {
+		scope = "prod"
+	}
+	atRaw := r.URL.Query().Get("at")
+
+	at := time.Now().Add(-5 * time.Minute)
+	if atRaw != "" {
+		parsed, err := time.Parse(time.RFC3339, atRaw)
+		if err != nil {
+			http.Error(w, "at must be RFC3339", http.StatusBadRequest)
+			return
+		}
+		at = parsed
+	}
+	// A future timestamp is not a valid MVCC read, and the database error for it
+	// is opaque, so reject it here with something an operator can act on.
+	if at.After(time.Now()) {
+		writeJSON(w, TimeTravelResponse{At: at.UTC().Format(time.RFC3339), Scope: scope,
+			Beliefs: []Episode{}, Note: "cannot read the future; choose a past instant"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+
+	st := memory.NewStore(s.db, s.embed)
+	beliefs, err := st.AsOf(at).Beliefs(ctx, scope, 50)
+	resp := TimeTravelResponse{At: at.UTC().Format(time.RFC3339), Scope: scope, Beliefs: []Episode{}}
+	if err != nil {
+		// Outside the garbage collection window is the common, explainable case.
+		resp.Note = "no readable snapshot at that instant: " + err.Error()
+		writeJSON(w, resp)
+		return
+	}
+	for _, b := range beliefs {
+		resp.Beliefs = append(resp.Beliefs, Episode{
+			ID: b.ID.String(), ScopeKey: b.ScopeKey, Status: b.Status,
+			Symptom: b.Symptom, Narrative: b.Narrative, Outcome: b.Outcome,
+			Salience: b.Salience, CreatedAt: b.CreatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	_ = s.db.QueryRow(ctx, `SELECT count(*) FROM episodes WHERE scope_key=$1`, scope).Scan(&resp.NowCount)
+	writeJSON(w, resp)
+}
+
+// ---------------------------------------------------------------------------
+// One incident, end to end.
+// ---------------------------------------------------------------------------
+
+type IncidentResponse struct {
+	Episode Episode  `json:"episode"`
+	Intents []Intent `json:"intents"`
+	Note    string   `json:"note,omitempty"`
+}
+
+func (s *Server) handleIncident(w http.ResponseWriter, r *http.Request) {
+	idRaw := r.URL.Query().Get("id")
+	id, err := uuid.Parse(idRaw)
+	if err != nil {
+		http.Error(w, "id must be a UUID", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	var e Episode
+	err = s.db.QueryRow(ctx, `
+SELECT episode_id::STRING, scope_key, status, symptom, narrative,
+       coalesce(outcome,''), salience, expires_at IS NULL, created_at::STRING
+  FROM episodes WHERE episode_id=$1`, id).
+		Scan(&e.ID, &e.ScopeKey, &e.Status, &e.Symptom, &e.Narrative,
+			&e.Outcome, &e.Salience, &e.Pinned, &e.CreatedAt)
+	if err != nil {
+		http.Error(w, "incident not found", http.StatusNotFound)
+		return
+	}
+
+	rows, err := s.db.Query(ctx, `
+SELECT idem_key, episode_id::STRING, action_type, state, coalesce(external_ref,''),
+       attempts, args::STRING, coalesce(outcome::STRING,''), created_at::STRING,
+       coalesce(resolved_at::STRING,'')
+  FROM action_intents WHERE episode_id=$1 ORDER BY created_at`, id)
+	if err != nil {
+		s.fail(w, "incident intents", err)
+		return
+	}
+	defer rows.Close()
+
+	resp := IncidentResponse{Episode: e, Intents: []Intent{}}
+	for rows.Next() {
+		var i Intent
+		if err := rows.Scan(&i.IdemKey, &i.EpisodeID, &i.ActionType, &i.State,
+			&i.ExternalRef, &i.Attempts, &i.Args, &i.Outcome, &i.CreatedAt, &i.ResolvedAt); err != nil {
+			s.fail(w, "incident intents", err)
+			return
+		}
+		resp.Intents = append(resp.Intents, i)
+	}
+	writeJSON(w, resp)
 }
