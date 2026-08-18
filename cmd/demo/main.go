@@ -36,6 +36,8 @@ func main() {
 	reconcile := flag.Bool("reconcile", false,
 		"run the reconciler: verify orphaned intents against the real audit log and settle them")
 	pace := flag.Duration("pace", 0, "pause between steps so a viewer can follow along")
+	reset := flag.Bool("reset", false,
+		"wipe all memory and intents so a demo can be recorded from an empty slate")
 	escalate := flag.Bool("escalate", false,
 		"run a delete whose effect is not attributable from world state, so the "+
 			"verifier returns Unknown and escalates to a human instead of guessing")
@@ -71,6 +73,21 @@ func main() {
 
 	verify.MustRegister[ccloud.DeleteSQLUserArgs](reg,
 		ccloud.DeleteSQLUserAction{Client: client, Lookback: 2 * time.Hour})
+
+	if *reset {
+		// Episodes are deleted last because action_intents holds a foreign key to
+		// them, which is the same constraint that makes row-level TTL interesting.
+		for _, stmt := range []string{
+			"DELETE FROM action_intents", "DELETE FROM playbooks", "DELETE FROM episodes",
+		} {
+			if _, err := pool.Exec(ctx, stmt); err != nil {
+				log.Fatalf("reset: %s: %v", stmt, err)
+			}
+		}
+		fmt.Println("memory cleared. The dashboard is now empty and ready to record.")
+		fmt.Println("Next: go run ./cmd/demo -incidents 3")
+		return
+	}
 
 	if *reconcile {
 		runReconciler(ctx, pool, reg, coord, embedder, agentID, *pace)

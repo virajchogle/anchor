@@ -26,10 +26,12 @@ seconds on its own, so you never need to reload it on camera.
 Only if the dashboard looks cluttered from testing.
 
 ```sh
-printf 'DELETE FROM action_intents;\nDELETE FROM playbooks;\nDELETE FROM episodes;\n' > /tmp/clean.sql
-go run ./cmd/anchorctl migrate /tmp/clean.sql
-go run ./cmd/demo -incidents 3          # ~90s, real Bedrock + real ccloud
+go run ./cmd/demo -reset      # empty slate
 ```
+
+**Record from empty.** Do not pre-seed. Watching the counters go from zero is the
+"memory compounds" segment, and a dashboard that already has history gives that
+away before you say it. The seeding run below IS step 2 of the recording.
 
 Leave the browser on **Live run** for the whole recording. It animates on its own
 while you talk, so you never have to touch it on camera.
