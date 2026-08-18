@@ -14,9 +14,11 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -59,6 +61,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/recall", s.handleRecall)
 	mux.HandleFunc("GET /api/timetravel", s.handleTimeTravel)
 	mux.HandleFunc("GET /api/incident", s.handleIncident)
+	mux.HandleFunc("GET /api/live", s.handleLive)
 	mux.Handle("GET /", http.FileServer(http.FS(assets)))
 	return s.withLogging(mux)
 }
@@ -610,4 +613,164 @@ SELECT idem_key, episode_id::STRING, action_type, state, coalesce(external_ref,'
 		resp.Intents = append(resp.Intents, i)
 	}
 	writeJSON(w, resp)
+}
+
+// ---------------------------------------------------------------------------
+// Live view: the protocol as it happens.
+// ---------------------------------------------------------------------------
+
+// Phase is one stage of the three-phase protocol as the UI renders it.
+//
+// State is one of: pending, active, done, alert, escalated. The distinction
+// between alert and escalated matters: alert means the world may have changed
+// and we have not recorded it yet, escalated means we looked and could not tell.
+type Phase struct {
+	Key    string `json:"key"`
+	Label  string `json:"label"`
+	State  string `json:"state"`
+	Detail string `json:"detail"`
+}
+
+type LiveResponse struct {
+	EpisodeID  string  `json:"episode_id"`
+	Symptom    string  `json:"symptom"`
+	Status     string  `json:"status"`
+	ActionType string  `json:"action_type"`
+	IdemKey    string  `json:"idem_key"`
+	Phases     []Phase `json:"phases"`
+	Recalled   int     `json:"recalled"`
+	StartedAt  string  `json:"started_at"`
+	Note       string  `json:"note,omitempty"`
+}
+
+// handleLive describes the most recent incident as a phase pipeline.
+//
+// It is derived entirely from committed database state rather than from any
+// in-process progress tracking, which means the UI stays correct even when the
+// agent that started the work has died. That is the same property the protocol
+// itself depends on.
+func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	var (
+		epID, symptom, status, createdAt string
+	)
+	err := s.db.QueryRow(ctx, `
+SELECT episode_id::STRING, symptom, status, created_at::STRING
+  FROM episodes ORDER BY created_at DESC LIMIT 1`).Scan(&epID, &symptom, &status, &createdAt)
+	if err != nil {
+		writeJSON(w, LiveResponse{Phases: []Phase{}, Note: "no incidents yet"})
+		return
+	}
+
+	var (
+		idemKey, actionType, state, extRef, outcome string
+		attempts                                    int
+	)
+	hasIntent := true
+	err = s.db.QueryRow(ctx, `
+SELECT idem_key, action_type, state, coalesce(external_ref,''),
+       coalesce(outcome::STRING,''), attempts
+  FROM action_intents WHERE episode_id = $1 ORDER BY created_at DESC LIMIT 1`, epID).
+		Scan(&idemKey, &actionType, &state, &extRef, &outcome, &attempts)
+	if err != nil {
+		hasIntent = false
+	}
+
+	// How many prior episodes existed when this one opened, which is what the
+	// agent had available to recall.
+	var recalled int
+	_ = s.db.QueryRow(ctx,
+		`SELECT count(*) FROM episodes WHERE created_at < (SELECT created_at FROM episodes WHERE episode_id=$1)`,
+		epID).Scan(&recalled)
+
+	unknown := strings.Contains(outcome, `"disposition":"UNKNOWN"`) ||
+		strings.Contains(outcome, `"disposition": "UNKNOWN"`)
+
+	resp := LiveResponse{
+		EpisodeID: epID, Symptom: symptom, Status: status,
+		ActionType: actionType, IdemKey: idemKey, Recalled: recalled,
+		StartedAt: createdAt,
+	}
+
+	mk := func(key, label, st, detail string) Phase {
+		return Phase{Key: key, Label: label, State: st, Detail: detail}
+	}
+
+	// 1. Opened
+	resp.Phases = append(resp.Phases, mk("open", "Incident opened", "done",
+		"Episode created with the symptom embedded. It must exist before the intent, "+
+			"because the idempotency key hashes its id."))
+
+	// 2. Recalled
+	resp.Phases = append(resp.Phases, mk("recall", "Memory recalled", "done",
+		fmt.Sprintf("%d prior episode(s) were available to search by cosine distance.", recalled)))
+
+	if !hasIntent {
+		resp.Phases = append(resp.Phases,
+			mk("intend", "Intent written", "active", "waiting for the agent to decide"),
+			mk("execute", "Executed", "pending", ""),
+			mk("verify", "Verified", "pending", ""),
+			mk("commit", "Committed atomically", "pending", ""))
+		writeJSON(w, resp)
+		return
+	}
+
+	// 3. Intended
+	resp.Phases = append(resp.Phases, mk("intend", "Intent written", "done",
+		fmt.Sprintf("Action %s recorded BEFORE touching the world. Key %s…",
+			actionType, safeCut(idemKey, 24))))
+
+	switch {
+	case state == "COMMITTED":
+		resp.Phases = append(resp.Phases,
+			mk("execute", "Executed", "done", "The external call ran."),
+			mk("verify", "Verified", "done", verifyDetail(outcome, extRef)),
+			mk("commit", "Committed atomically", "done",
+				"Intent resolution, world state and the memory row with its embedding, "+
+					"in one serializable transaction."))
+	case unknown:
+		resp.Phases = append(resp.Phases,
+			mk("execute", "Executed", "done", "The external call ran."),
+			mk("verify", "Verified", "escalated",
+				"Could not establish whether this took effect. Returning Unknown and "+
+					"escalating rather than guessing. Attempt "+fmt.Sprint(attempts)+"."),
+			mk("commit", "Committed atomically", "pending",
+				"Deliberately not committed. A human decides."))
+	case extRef == "":
+		// The divergence window: acted, not recorded.
+		resp.Phases = append(resp.Phases,
+			mk("execute", "Executed", "alert",
+				"The world may already have changed and nothing records it yet."),
+			mk("verify", "Verified", "pending", "awaiting the reconciler"),
+			mk("commit", "Committed atomically", "pending", ""))
+	default:
+		resp.Phases = append(resp.Phases,
+			mk("execute", "Executed", "done", "The external call ran."),
+			mk("verify", "Verified", "active", "checking external ground truth"),
+			mk("commit", "Committed atomically", "pending", ""))
+	}
+	writeJSON(w, resp)
+}
+
+func verifyDetail(outcome, extRef string) string {
+	src := "external evidence"
+	switch {
+	case strings.Contains(outcome, "audit_log"):
+		src = "the CockroachDB Cloud audit log"
+	case strings.Contains(outcome, "sql_user_list"):
+		src = "a live resource listing"
+	}
+	if extRef != "" {
+		return "Confirmed against " + src + ". Reference " + safeCut(extRef, 40) + "."
+	}
+	return "Confirmed against " + src + "."
+}
+
+func safeCut(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }

@@ -22,6 +22,47 @@ database cannot do this, because the memory write becomes a second transaction
 that can fail alone. That is not an assertion here. It is
 [a test](internal/control/control_test.go) that reproduces the failure.
 
+
+## How it works
+
+```mermaid
+flowchart LR
+    subgraph P1["Phase 1 · Intend"]
+        A["Write the intent<br/><i>before</i> acting"]
+    end
+    subgraph P2["Phase 2 · Execute"]
+        B["Call the external API<br/>carrying the idempotency key"]
+    end
+    subgraph P3["Phase 3 · Commit"]
+        C["Intent + world state + memory<br/><b>ONE serializable transaction</b>"]
+    end
+
+    S(["Incident"]) --> R["Recall similar<br/>past incidents"]
+    R --> A --> B --> C --> D(["Memory matches reality"])
+
+    B -. "process dies here" .-> X{{"World changed.<br/>Nothing recorded it."}}
+    X --> V["Reconciler asks the<br/>external system what happened"]
+    V -->|"attributable proof"| C
+    V -->|"no proof"| U{{"Unknown<br/>escalate to a human"}}
+
+    classDef ph fill:#0d2818,stroke:#3fb950,color:#fff
+    classDef bad fill:#2b1315,stroke:#d03b3b,color:#fff
+    classDef warn fill:#2b2413,stroke:#fab219,color:#fff
+    class A,B,C ph
+    class X bad
+    class U warn
+```
+
+**The dotted line is the entire project.** A process that dies between acting and
+recording leaves the world changed and memory blind. Retrying there acts twice.
+Anchor instead asks the external system what actually happened, matching on an
+identifier derived from the intent itself, so the answer is attributable to *this*
+call rather than to a world that merely looks right.
+
+Where no attributable proof exists, the verdict is **Unknown** and a human is
+asked. That third answer is what keeps the agent from either doubling an action
+or writing a false history.
+
 ---
 
 ## Compliance

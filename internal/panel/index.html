@@ -159,6 +159,35 @@ input:focus{outline:2px solid var(--accent);outline-offset:-1px}
   width:1px;background:var(--line-strong)}
 .step h4{margin:3px 0 4px;font-size:13.5px;font-weight:640}
 .step p{margin:0;color:var(--ink-2);font-size:12.5px}
+/* ---------- live pipeline ---------- */
+.pipe{display:grid;gap:0;padding:6px 18px 20px}
+.ph{display:grid;grid-template-columns:34px 1fr;gap:16px;position:relative;padding-bottom:20px}
+.ph:last-child{padding-bottom:4px}
+.ph:not(:last-child):before{content:'';position:absolute;left:16.5px;top:34px;bottom:0;
+  width:2px;background:var(--line-strong)}
+.ph.done:not(:last-child):before{background:var(--good)}
+.ph .bub{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;
+  font-size:14px;font-weight:700;z-index:1;border:2px solid;background:var(--surface)}
+.ph.pending .bub{color:var(--ink-3);border-color:var(--line-strong)}
+.ph.done    .bub{color:#fff;background:var(--good);border-color:var(--good)}
+.ph.active  .bub{color:var(--accent);border-color:var(--accent);animation:ring 1.2s ease-in-out infinite}
+.ph.alert   .bub{color:#fff;background:var(--critical);border-color:var(--critical);
+  animation:ring 1s ease-in-out infinite}
+.ph.escalated .bub{color:#fff;background:var(--warning);border-color:var(--warning)}
+@keyframes ring{0%,100%{box-shadow:0 0 0 0 currentColor}50%{box-shadow:0 0 0 6px transparent}}
+.ph h4{margin:6px 0 3px;font-size:14px;font-weight:640}
+.ph.pending h4{color:var(--ink-3)}
+.ph.alert h4{color:var(--critical)} .ph.escalated h4{color:var(--warning)}
+.ph p{margin:0;color:var(--ink-2);font-size:12.5px;max-width:74ch}
+.ph .badge{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+  padding:1.5px 7px;border-radius:99px;border:1px solid;margin-left:8px;vertical-align:1px}
+.ph.alert .badge{color:var(--critical);border-color:var(--critical)}
+.ph.escalated .badge{color:var(--warning);border-color:var(--warning)}
+.runhdr{padding:2px 18px 12px;display:flex;gap:14px;flex-wrap:wrap;align-items:baseline}
+.runhdr .sym{font-size:15px;font-weight:640}
+.runhdr .meta{color:var(--ink-3);font-size:12px}
+.howto{padding:0 18px 18px;color:var(--ink-3);font-size:12.5px;line-height:1.6}
+.howto code{margin-right:4px}
 #tip{position:fixed;pointer-events:none;opacity:0;transition:opacity .1s;background:var(--raised);
   border:1px solid var(--line-strong);border-radius:8px;padding:8px 11px;font-size:12px;
   box-shadow:var(--shadow);z-index:20;color:var(--ink)}
@@ -174,6 +203,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:-1px}
   </div>
   <nav id="nav">
     <div class="grp">Operate</div>
+    <a href="#/live" data-v="live"><span class="ic">▶</span>Live run</a>
     <a href="#/overview" data-v="overview"><span class="ic">◧</span>Overview</a>
     <a href="#/incidents" data-v="incidents"><span class="ic">◈</span>Incidents<span class="cnt" id="c-inc"></span></a>
     <a href="#/actions" data-v="actions"><span class="ic">▤</span>Actions<span class="cnt" id="c-act"></span></a>
@@ -199,7 +229,25 @@ input:focus{outline:2px solid var(--accent);outline-offset:-1px}
   </div>
   <div class="wrap">
 
-    <section class="view on" data-v="overview">
+    <section class="view on" data-v="live">
+      <div class="card">
+        <h2>The agent, working</h2>
+        <p class="cap">Every stage below is read from committed database state, not from any
+          in-process progress tracking. It stays correct even when the agent that started the
+          work has died, which is the same property the protocol itself depends on.</p>
+        <div class="runhdr" id="runhdr"></div>
+        <div class="pipe" id="pipe"></div>
+        <div class="howto">
+          Drive it from a terminal and watch this page:
+          <br><code>go run ./cmd/demo -incidents 3</code> a full incident, memory compounding
+          <br><code>go run ./cmd/demo -crash</code> acts on the world, then dies before recording it
+          <br><code>go run ./cmd/demo -reconcile</code> verifies against ground truth and settles it
+          <br><code>go run ./cmd/demo -escalate</code> an action that cannot be attributed, then reconcile
+        </div>
+      </div>
+    </section>
+
+    <section class="view" data-v="overview">
       <div id="alert"></div>
       <div class="tiles" id="tiles"></div>
       <div class="grid2">
@@ -311,6 +359,7 @@ const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim
 const pct=v=>Math.max(0,Math.min(100,v*100));
 
 const META={
+ live:['Live run','Watch the three-phase protocol advance as the agent works.'],
  overview:['Overview','Live state of the agent, its memory, and whether anything is unaccounted for.'],
  incidents:['Incidents','Every incident the agent has handled. Select a row for its full trace.'],
  actions:['Actions','The durable intent log. Each row was written before the world changed.'],
@@ -321,8 +370,8 @@ const META={
  about:['How it works','The claim, and why the design follows from it.']};
 
 function route(){
-  const v=(location.hash.replace('#/','')||'overview').split('?')[0];
-  const known=META[v]?v:'overview';
+  const v=(location.hash.replace('#/','')||'live').split('?')[0];
+  const known=META[v]?v:'live';
   $$('.view').forEach(s=>s.classList.toggle('on',s.dataset.v===known));
   $$('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===known));
   $('#ttl').textContent=META[known][0]; $('#sub').textContent=META[known][1];
@@ -549,11 +598,34 @@ function render(s){
     <td>${c.count}</td><td>${esc(c.cumulative_wait)}</td></tr>`);
 }
 
+const PH_ICON={open:'1',recall:'2',intend:'3',execute:'4',verify:'5',commit:'6'};
+async function loadLive(){
+  let d; try{d=await (await fetch('/api/live')).json()}catch(e){return}
+  const hdr=$('#runhdr'), pipe=$('#pipe');
+  if(!d.phases||!d.phases.length){
+    hdr.innerHTML=''; pipe.innerHTML='<div class="empty">'+esc(d.note||'no incidents yet')+'</div>'; return;
+  }
+  hdr.innerHTML=`<span class="sym">${esc(trunc(d.symptom,72))}</span>
+    <span class="meta">${esc(d.action_type||'no action yet')} ·
+    ${d.recalled} prior episode(s) available · started ${esc(String(d.started_at).slice(0,19))}</span>`;
+  pipe.innerHTML=d.phases.map((p,i)=>{
+    const badge = p.state==='alert' ? '<span class="badge">memory diverged</span>'
+      : p.state==='escalated' ? '<span class="badge">needs a human</span>' : '';
+    const glyph = p.state==='done' ? '&#10003;' : (PH_ICON[p.key]||(i+1));
+    return `<div class="ph ${esc(p.state)}"><div class="bub">${glyph}</div>
+      <div><h4>${esc(p.label)}${badge}</h4><p>${esc(p.detail)}</p></div></div>`;
+  }).join('');
+}
+
 async function load(){
   try{const r=await fetch('/api/state');if(!r.ok)throw new Error('HTTP '+r.status);render(await r.json())}
   catch(e){$('#railst').className='st bad';$('#railst').lastElementChild.textContent='panel offline'}
 }
-route(); load(); setInterval(load,5000);
+route(); load(); loadLive();
+setInterval(load,5000);
+// The live view polls faster, but only while it is the visible one.
+setInterval(()=>{ if(location.hash.replace('#/','')==='live'||!location.hash) loadLive(); },1200);
+addEventListener('hashchange',()=>{ if(location.hash.replace('#/','')==='live') loadLive(); });
 $('#at').value=localISO(new Date(Date.now()-5*60000));
 </script>
 </body>
