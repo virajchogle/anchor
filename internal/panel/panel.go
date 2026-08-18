@@ -85,6 +85,23 @@ type State struct {
 	Playbooks   []Playbook   `json:"playbooks"`
 	Contention  []Contention `json:"contention"`
 	Totals      Totals       `json:"totals"`
+	Growth      []Bucket     `json:"growth"`
+	Evidence    []Evidence   `json:"evidence"`
+}
+
+// Bucket is one time slice of memory accumulation.
+type Bucket struct {
+	At         string `json:"at"`
+	Count      int    `json:"count"`
+	Cumulative int    `json:"cumulative"`
+}
+
+// Evidence counts committed intents by the source that settled them. This is the
+// distribution that matters most: an intent settled by nothing is an intent that
+// should never have been marked done.
+type Evidence struct {
+	Source string `json:"source"`
+	Count  int    `json:"count"`
 }
 
 type Totals struct {
@@ -160,6 +177,13 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 		st.Contention = []Contention{}
 	}
 	st.Totals, _ = s.totals(ctx)
+
+	if st.Growth, err = s.growth(ctx); err != nil || st.Growth == nil {
+		st.Growth = []Bucket{}
+	}
+	if st.Evidence, err = s.evidence(ctx); err != nil || st.Evidence == nil {
+		st.Evidence = []Evidence{}
+	}
 
 	writeJSON(w, st)
 }
@@ -295,6 +319,69 @@ SELECT (SELECT count(*) FROM episodes),
        (SELECT count(*) FROM playbooks)`).
 		Scan(&t.Episodes, &t.Pinned, &t.Committed, &t.Pending, &t.Failed, &t.Playbooks)
 	return t, err
+}
+
+// growth returns one point per episode, cumulative.
+//
+// Bucketing by time was the first attempt and it was wrong for this data: a live
+// demo creates several episodes inside one minute, so every bucketing granularity
+// collapsed to a single point and the chart had nothing to draw. One point per
+// episode always renders, and the x-axis still carries real timestamps.
+func (s *Server) growth(ctx context.Context) ([]Bucket, error) {
+	rows, err := s.db.Query(ctx, `
+SELECT created_at::STRING
+  FROM episodes
+ ORDER BY created_at DESC
+ LIMIT 200`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stamps []string
+	for rows.Next() {
+		var at string
+		if err := rows.Scan(&at); err != nil {
+			return nil, err
+		}
+		stamps = append(stamps, at)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Newest first from the query so LIMIT keeps recent history; reverse to plot
+	// forward in time, then accumulate.
+	for i, j := 0, len(stamps)-1; i < j; i, j = i+1, j-1 {
+		stamps[i], stamps[j] = stamps[j], stamps[i]
+	}
+	out := make([]Bucket, 0, len(stamps))
+	for i, at := range stamps {
+		out = append(out, Bucket{At: at, Count: 1, Cumulative: i + 1})
+	}
+	return out, nil
+}
+
+func (s *Server) evidence(ctx context.Context) ([]Evidence, error) {
+	rows, err := s.db.Query(ctx, `
+SELECT coalesce(outcome->>'evidence', 'unattributed'), count(*)::INT
+  FROM action_intents
+ WHERE state = 'COMMITTED'
+ GROUP BY 1 ORDER BY 2 DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Evidence
+	for rows.Next() {
+		var e Evidence
+		if err := rows.Scan(&e.Source, &e.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 func (s *Server) fail(w http.ResponseWriter, what string, err error) {

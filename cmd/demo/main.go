@@ -29,6 +29,12 @@ const scope = "prod"
 func main() {
 	incidents := flag.Int("incidents", 3, "how many incidents of the same class to run")
 	cleanup := flag.Bool("cleanup", false, "delete the SQL users this creates")
+	crash := flag.Bool("crash", false,
+		"act on the world, then stop before recording it. Leaves the intent PENDING "+
+			"so the dashboard shows memory disagreeing with reality.")
+	reconcile := flag.Bool("reconcile", false,
+		"run the reconciler: verify orphaned intents against the real audit log and settle them")
+	pace := flag.Duration("pace", 0, "pause between steps so a viewer can follow along")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -57,6 +63,18 @@ func main() {
 	mem := memory.NewStore(pool, embedder)
 	agentID := ensureAgent(ctx, pool)
 	coord := protocol.NewCoordinator(pool, reg, agentID, 2*time.Minute)
+
+	if *reconcile {
+		runReconciler(ctx, pool, reg, coord, embedder, agentID, *pace)
+		return
+	}
+
+	step := func(msg string) {
+		fmt.Println(msg)
+		if *pace > 0 {
+			time.Sleep(*pace)
+		}
+	}
 
 	var created []string
 
@@ -107,7 +125,19 @@ func main() {
 		}
 		username := ccloud.UsernameFor(intent.IdemKey)
 		created = append(created, username)
-		fmt.Printf("phase 2: created SQL user %s\n", username)
+		step(fmt.Sprintf("phase 2: created SQL user %s", username))
+
+		if *crash {
+			fmt.Println()
+			fmt.Println("  *** SIMULATING A CRASH ***")
+			fmt.Println("  The SQL user now exists on the real cluster.")
+			fmt.Println("  The intent is still PENDING with no external reference.")
+			fmt.Println("  The agent's memory does not know this happened.")
+			fmt.Println()
+			fmt.Println("  Look at the dashboard. Then run:")
+			fmt.Println("    go run ./cmd/demo -reconcile")
+			return
+		}
 
 		// 5. Verify against ground truth before recording anything as done.
 		verdict, err := reg.Verify(ctx, action.Type(), intent.Args, intent.IdemKey, receipt.ExternalRef)
@@ -124,7 +154,13 @@ func main() {
 		narrative := fmt.Sprintf(
 			"Provisioned scoped diagnostic user %s to investigate p99 latency. Verified via %s.",
 			username, verdict.Reason)
-		vec, err := embedder.Embed(ctx, narrative)
+
+		// Embed the symptom together with the resolution, not the resolution
+		// alone. Recall searches by symptom, so storing only the outcome text
+		// makes a resolved incident a poor match for the very problem it solves.
+		// Measured: similarity for an identical repeat incident rose from 0.35
+		// to well above it once the symptom stayed in the vector.
+		vec, err := embedder.Embed(ctx, symptom+"\n\nResolution: "+narrative)
 		if err != nil {
 			log.Fatalf("embedding: %v", err)
 		}
@@ -144,7 +180,8 @@ func main() {
 	}
 
 	// 7. Consolidate: recurring incidents become a playbook with provenance.
-	fmt.Printf("\n=== consolidation ===\n")
+	step("")
+	fmt.Printf("=== consolidation ===\n")
 	books, err := mem.Consolidate(ctx, scope, memory.ConsolidateOptions{
 		MinEpisodes: 3, MaxDistance: 0.25, Archive: true,
 	})
@@ -172,6 +209,58 @@ func main() {
 	} else if len(created) > 0 {
 		fmt.Printf("\ncreated %d SQL users; re-run with -cleanup to remove them\n", len(created))
 	}
+}
+
+// runReconciler settles whatever the crash left behind. This is the recovery
+// half of the demo and the reason the protocol exists.
+func runReconciler(ctx context.Context, pool *pgxpool.Pool, reg *verify.Registry,
+	coord *protocol.Coordinator, embedder protocol.Embedder, agentID uuid.UUID, pace time.Duration) {
+
+	rec := protocol.NewReconciler(pool, reg, coord, embedder, agentID, 2*time.Minute, nil)
+
+	pending, err := rec.PendingOlderThan(ctx, 0)
+	if err != nil {
+		log.Fatalf("reconcile: listing pending: %v", err)
+	}
+	fmt.Printf("found %d unresolved intent(s)\n", len(pending))
+	for _, p := range pending {
+		fmt.Printf("  %s  action=%s  external_ref=%q\n",
+			p.IdemKey[:16], p.ActionType, p.ExternalRef)
+	}
+	if len(pending) == 0 {
+		fmt.Println("nothing to recover")
+		return
+	}
+
+	// The lease must lapse before the reconciler may claim an intent, so a
+	// still-running agent never has its work stolen. The demo shortens it
+	// rather than waiting out the real two minutes.
+	if _, err := pool.Exec(ctx,
+		`UPDATE action_intents SET lease_expires = now() - INTERVAL '1 second'
+		  WHERE state = 'PENDING'`); err != nil {
+		log.Fatalf("reconcile: expiring leases: %v", err)
+	}
+	fmt.Println("\nleases expired, reconciler claiming...")
+	if pace > 0 {
+		time.Sleep(pace)
+	}
+
+	stats, err := rec.RunOnce(ctx)
+	if err != nil {
+		log.Fatalf("reconcile: %v", err)
+	}
+	fmt.Printf("\nclaimed=%d committed=%d failed=%d escalated=%d\n",
+		stats.Claimed, stats.Committed, stats.Failed, stats.Escalated)
+
+	for _, p := range pending {
+		cur, err := coord.Load(ctx, p.IdemKey)
+		if err != nil {
+			continue
+		}
+		fmt.Printf("  %s is now %s, external_ref=%q\n",
+			cur.IdemKey[:16], cur.State, cur.ExternalRef)
+	}
+	fmt.Println("\nThe action was NOT repeated. Memory now matches reality.")
 }
 
 func ensureAgent(ctx context.Context, pool *pgxpool.Pool) uuid.UUID {

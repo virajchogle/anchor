@@ -5,152 +5,391 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Anchor</title>
 <style>
-:root{--bg:#0f1115;--panel:#171a21;--line:#262b36;--fg:#e6e9ef;--dim:#9aa4b2;
---ok:#3fb950;--warn:#d29922;--bad:#f85149;--acc:#58a6ff}
+/* Light is the base palette; dark is a selected set stepped for the dark
+   surface, not an automatic inversion. Both are declared so the toggle wins
+   in either direction and the OS setting covers the default. */
+:root{
+  color-scheme:light;
+  --plane:#f9f9f7; --surface:#fcfcfb; --raised:#ffffff;
+  --line:#e6e5e1; --line-strong:#d4d3ce;
+  --ink:#0b0b0b; --ink-2:#52514e; --ink-3:#8a8983;
+  --series-1:#2a78d6; --series-2:#eb6834; --series-3:#1baf7a;
+  --grid:#eeedea;
+  --good:#0ca30c; --warning:#fab219; --critical:#d03b3b;
+  --good-bg:#eaf7ea; --critical-bg:#fdeceb;
+  --shadow:0 1px 2px rgba(16,15,15,.06),0 4px 12px rgba(16,15,15,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:where(:not([data-theme="light"])){
+    color-scheme:dark;
+    --plane:#0d0d0d; --surface:#161920; --raised:#1c2028;
+    --line:#272b34; --line-strong:#343945;
+    --ink:#ffffff; --ink-2:#b9bcc4; --ink-3:#7d818b;
+    --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70;
+    --grid:#232730;
+    --good:#0ca30c; --warning:#fab219; --critical:#d03b3b;
+    --good-bg:#10241a; --critical-bg:#2b1315;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --plane:#0d0d0d; --surface:#161920; --raised:#1c2028;
+  --line:#272b34; --line-strong:#343945;
+  --ink:#ffffff; --ink-2:#b9bcc4; --ink-3:#7d818b;
+  --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70;
+  --grid:#232730;
+  --good:#0ca30c; --warning:#fab219; --critical:#d03b3b;
+  --good-bg:#10241a; --critical-bg:#2b1315;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
+}
+
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);
-font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
-header{padding:20px 24px;border-bottom:1px solid var(--line)}
-h1{margin:0;font-size:18px;letter-spacing:.5px}
-.sub{color:var(--dim);margin-top:6px;font-size:12.5px;max-width:70ch}
-main{padding:20px 24px;display:grid;gap:20px}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px}
-.tile{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
-.tile b{display:block;font-size:22px;font-weight:600}
-.tile span{color:var(--dim);font-size:11.5px;text-transform:uppercase;letter-spacing:.6px}
-section{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
-h2{margin:0;padding:12px 16px;font-size:13px;border-bottom:1px solid var(--line);
-color:var(--dim);text-transform:uppercase;letter-spacing:.7px}
+body{margin:0;background:var(--plane);color:var(--ink);
+  font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+header{padding:24px 28px 20px;border-bottom:1px solid var(--line);background:var(--surface)}
+.hrow{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+h1{margin:0;font-size:19px;font-weight:650;letter-spacing:-.2px}
+.tag{font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;
+  color:var(--series-1);border:1px solid var(--series-1);border-radius:99px;padding:2px 9px}
+.sub{color:var(--ink-2);margin-top:8px;font-size:13.5px;max-width:76ch}
+.spacer{flex:1}
+button{font:inherit;font-size:12.5px;color:var(--ink-2);background:var(--raised);
+  border:1px solid var(--line-strong);border-radius:7px;padding:6px 12px;cursor:pointer}
+button:hover{color:var(--ink)}
+
+main{padding:22px 28px 40px;display:grid;gap:18px;max-width:1400px}
+
+#alert{display:none;border-radius:10px;padding:15px 18px;border:1px solid;box-shadow:var(--shadow)}
+#alert .t{display:flex;align-items:center;gap:9px;font-weight:650;font-size:14.5px;margin-bottom:5px}
+#alert .d{font-size:13px;line-height:1.5}
+#alert.diverged{display:block;background:var(--critical-bg);border-color:var(--critical)}
+#alert.diverged .t{color:var(--critical)}
+#alert.settled{display:block;background:var(--good-bg);border-color:var(--good)}
+#alert.settled .t{color:var(--good)}
+#alert .d{color:var(--ink-2)}
+.dot{width:9px;height:9px;border-radius:50%;background:currentColor;flex:none}
+#alert.diverged .dot{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:12px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;box-shadow:var(--shadow)}
+.tile b{display:block;font-size:26px;font-weight:640;letter-spacing:-.5px;line-height:1.15}
+.tile span{color:var(--ink-3);font-size:11px;text-transform:uppercase;
+  letter-spacing:.7px;font-weight:600;display:block;margin-top:5px}
+.tile.hero b{color:var(--good)}
+.tile.hero.bad b{color:var(--critical)}
+
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:18px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  box-shadow:var(--shadow);overflow:hidden}
+.card>h2{margin:0;padding:14px 18px 4px;font-size:14px;font-weight:640;letter-spacing:-.1px}
+.card>p.cap{margin:0;padding:0 18px 12px;color:var(--ink-3);font-size:12.5px}
+.card .body{padding:4px 18px 18px}
+figure{margin:0}
+svg{display:block;width:100%;overflow:visible}
+.axis text{fill:var(--ink-3);font-size:11px}
+.gridline{stroke:var(--grid);stroke-width:1}
+.legend{display:flex;gap:16px;flex-wrap:wrap;padding:0 18px 14px;font-size:12.5px;color:var(--ink-2)}
+.legend i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:6px;vertical-align:-1px}
+
 .scroll{overflow-x:auto}
-table{border-collapse:collapse;width:100%;min-width:640px}
-th,td{padding:9px 16px;text-align:left;border-bottom:1px solid var(--line);
-vertical-align:top;font-size:12.5px}
-th{color:var(--dim);font-weight:500}
+table{border-collapse:collapse;width:100%;min-width:660px}
+th,td{padding:10px 18px;text-align:left;border-bottom:1px solid var(--line);
+  vertical-align:top;font-size:12.5px}
+th{color:var(--ink-3);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.6px;
+  background:var(--plane)}
 tr:last-child td{border-bottom:none}
-code{background:#0b0d11;padding:1px 5px;border-radius:4px;font-size:11.5px;
-word-break:break-all;color:var(--acc)}
-.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px;border:1px solid}
-.COMMITTED,.resolved{color:var(--ok);border-color:#1c6b2c}
-.PENDING,.open{color:var(--warn);border-color:#7a5a10}
-.FAILED{color:var(--bad);border-color:#8b2b26}
-.archived{color:var(--dim);border-color:var(--line)}
-.pin{color:var(--ok)} .nopin{color:var(--dim)}
-.empty{padding:16px;color:var(--dim)}
-footer{padding:14px 24px;color:var(--dim);font-size:11.5px;border-top:1px solid var(--line)}
+tr.live{background:var(--critical-bg)}
+tr.live td:first-child{box-shadow:inset 3px 0 0 var(--critical)}
+code{background:var(--plane);border:1px solid var(--line);padding:1.5px 6px;border-radius:5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;word-break:break-all}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2.5px 9px;border-radius:99px;
+  font-size:11.5px;font-weight:600;border:1px solid}
+.pill .dot{width:6px;height:6px}
+.COMMITTED,.resolved{color:var(--good);border-color:var(--good)}
+.PENDING,.open{color:var(--warning);border-color:var(--warning)}
+.FAILED{color:var(--critical);border-color:var(--critical)}
+.archived{color:var(--ink-3);border-color:var(--line-strong)}
+.pin{color:var(--good);font-weight:600} .nopin{color:var(--ink-3)}
+.empty{padding:18px;color:var(--ink-3)}
+footer{padding:16px 28px 40px;color:var(--ink-3);font-size:12px}
+#tip{position:fixed;pointer-events:none;opacity:0;transition:opacity .1s;
+  background:var(--raised);border:1px solid var(--line-strong);border-radius:8px;
+  padding:8px 11px;font-size:12px;box-shadow:var(--shadow);z-index:10;color:var(--ink)}
+#tip b{display:block;font-size:11px;color:var(--ink-3);font-weight:600;margin-bottom:2px}
 </style>
 </head>
 <body>
 <header>
-  <h1>Anchor &mdash; transactional memory for acting agents</h1>
-  <div class="sub">The intent log and the memory row commit in the same transaction,
-  so the agent's record of what it did cannot diverge from what actually happened.</div>
+  <div class="hrow">
+    <div>
+      <h1>Anchor <span class="tag">live</span></h1>
+      <div class="sub">The intent log and the memory row commit in the same transaction,
+        so the agent's record of what it did cannot diverge from what actually happened.</div>
+    </div>
+    <div class="spacer"></div>
+    <button id="theme">Toggle theme</button>
+  </div>
 </header>
+
 <main>
+  <div id="alert"></div>
   <div class="tiles" id="tiles"></div>
 
-  <section>
-    <h2>Action intents &mdash; the durable record written before acting</h2>
+  <div class="grid2">
+    <section class="card">
+      <h2>Memory accumulating</h2>
+      <p class="cap">Cumulative episodes recorded. Memory is the product, so its growth is the headline.</p>
+      <div class="body"><figure id="growth"></figure></div>
+    </section>
+
+    <section class="card">
+      <h2>What proved each action happened</h2>
+      <p class="cap">Every committed action cites external evidence. An unattributed action is the failure this project exists to prevent.</p>
+      <div class="body"><figure id="evidence"></figure></div>
+      <div class="legend" id="evlegend"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Action intents</h2>
+    <p class="cap">The durable record, written before acting.</p>
     <div class="scroll"><table id="intents"><thead><tr>
       <th>State</th><th>Action</th><th>Idem key</th><th>External ref</th>
       <th>Attempts</th><th>Evidence</th></tr></thead><tbody></tbody></table></div>
   </section>
 
-  <section>
-    <h2>Episodes &mdash; memory, with TTL pinning</h2>
+  <section class="card">
+    <h2>Episodes</h2>
+    <p class="cap">Memory decays; the record of what the agent did to the world does not.</p>
     <div class="scroll"><table id="episodes"><thead><tr>
       <th>Status</th><th>Symptom</th><th>Outcome</th><th>Salience</th>
-      <th>Pinned</th></tr></thead><tbody></tbody></table></div>
+      <th>Retention</th></tr></thead><tbody></tbody></table></div>
   </section>
 
-  <section>
-    <h2>Playbooks &mdash; consolidated from episodes, with provenance</h2>
+  <section class="card">
+    <h2>Playbooks</h2>
+    <p class="cap">Written by the agent after seeing the same incident repeatedly. Steps come from actions that actually committed.</p>
     <div class="scroll"><table id="playbooks"><thead><tr>
-      <th>Title</th><th>Confidence</th><th>Derived from</th><th>Steps</th>
+      <th>Title</th><th>Confidence</th><th>Provenance</th><th>Steps</th>
     </tr></thead><tbody></tbody></table></div>
   </section>
 
-  <section>
-    <h2>Contention &mdash; crdb_internal.cluster_contention_events</h2>
+  <section class="card">
+    <h2>Contention</h2>
+    <p class="cap">crdb_internal.cluster_contention_events. Restricted by default in v26.2; enabling it is opt-in.</p>
     <div class="scroll"><table id="contention"><thead><tr>
       <th>Table</th><th>Index</th><th>Events</th><th>Cumulative wait</th>
     </tr></thead><tbody></tbody></table></div>
   </section>
 </main>
 <footer id="foot">loading…</footer>
+<div id="tip"></div>
 
 <script>
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c =>
-  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const trunc = (s,n) => { s = String(s ?? ''); return s.length > n ? s.slice(0,n)+'…' : s; };
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const trunc = (s,n) => { s=String(s??''); return s.length>n ? s.slice(0,n)+'…' : s; };
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+$('#theme').onclick = () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const next = cur === 'dark' ? 'light'
+    : cur === 'light' ? 'dark'
+    : (matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark');
+  document.documentElement.setAttribute('data-theme', next);
+  if (window.__last) render(window.__last);
+};
+
+const tip = $('#tip');
+function showTip(html, ev){
+  tip.innerHTML = html; tip.style.opacity = 1;
+  const r = tip.getBoundingClientRect();
+  let x = ev.clientX + 14, y = ev.clientY - r.height - 10;
+  if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - 14;
+  if (y < 8) y = ev.clientY + 16;
+  tip.style.left = x+'px'; tip.style.top = y+'px';
+}
+const hideTip = () => tip.style.opacity = 0;
+
+// ---------- Memory growth: area + line, single series so no legend ----------
+function growthChart(buckets){
+  const el = $('#growth');
+  if(!buckets || buckets.length < 2){
+    el.innerHTML = '<div class="empty">not enough history yet</div>'; return;
+  }
+  const W=560,H=210,P={t:12,r:14,b:26,l:44};
+  const iw=W-P.l-P.r, ih=H-P.t-P.b;
+  const max = Math.max(...buckets.map(b=>b.cumulative)) || 1;
+  const x = i => P.l + (buckets.length===1?iw/2:(i/(buckets.length-1))*iw);
+  const y = v => P.t + ih - (v/max)*ih;
+
+  const ticks=[0,.5,1].map(f=>Math.round(max*f));
+  const grid = ticks.map(t=>
+    `<line class="gridline" x1="${P.l}" x2="${W-P.r}" y1="${y(t)}" y2="${y(t)}"/>
+     <text x="${P.l-9}" y="${y(t)+4}" text-anchor="end">${t}</text>`).join('');
+
+  const line = buckets.map((b,i)=>`${i?'L':'M'}${x(i).toFixed(1)},${y(b.cumulative).toFixed(1)}`).join('');
+  const area = `${line}L${x(buckets.length-1).toFixed(1)},${P.t+ih}L${P.l},${P.t+ih}Z`;
+  const c = css('--series-1');
+
+  const first=buckets[0].at.slice(5,16), last=buckets[buckets.length-1].at.slice(5,16);
+  // Hit targets are full-height columns, far bigger than the 8px marker.
+  const hits = buckets.map((b,i)=>{
+    const w = iw/buckets.length;
+    return `<rect x="${(x(i)-w/2).toFixed(1)}" y="${P.t}" width="${w.toFixed(1)}" height="${ih}"
+      fill="transparent" data-i="${i}"/>`;
+  }).join('');
+
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="axis" role="img"
+      aria-label="Cumulative episodes recorded over time, ending at ${max}">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${c}" stop-opacity=".28"/>
+      <stop offset="100%" stop-color="${c}" stop-opacity="0"/>
+    </linearGradient></defs>
+    ${grid}
+    <path d="${area}" fill="url(#g)"/>
+    <path d="${line}" fill="none" stroke="${c}" stroke-width="2"
+      stroke-linejoin="round" stroke-linecap="round"/>
+    <circle id="gm" r="4.5" fill="${c}" stroke="var(--surface)" stroke-width="2" opacity="0"/>
+    <text x="${P.l}" y="${H-6}">${esc(first)}</text>
+    <text x="${W-P.r}" y="${H-6}" text-anchor="end">${esc(last)}</text>
+    ${hits}
+  </svg>`;
+
+  const svg = el.querySelector('svg'), mk = el.querySelector('#gm');
+  svg.querySelectorAll('rect[data-i]').forEach(r=>{
+    r.addEventListener('mousemove', ev=>{
+      const b = buckets[+r.dataset.i];
+      mk.setAttribute('cx', x(+r.dataset.i)); mk.setAttribute('cy', y(b.cumulative));
+      mk.setAttribute('opacity', 1);
+      showTip(`<b>${esc(b.at.slice(0,16))}</b>${b.cumulative} episodes total<br>episode #${b.cumulative}`, ev);
+    });
+    r.addEventListener('mouseleave', ()=>{ mk.setAttribute('opacity',0); hideTip(); });
+  });
+}
+
+// ---------- Evidence: horizontal bars, direct-labelled ----------
+const EV_LABEL = {audit_log:'CockroachDB audit log', sql_user_list:'Live resource listing',
+                  unattributed:'No evidence recorded'};
+function evidenceChart(rows){
+  const el = $('#evidence'), lg = $('#evlegend');
+  if(!rows || !rows.length){ el.innerHTML='<div class="empty">no committed actions yet</div>'; lg.innerHTML=''; return; }
+  const colors=[css('--series-1'),css('--series-2'),css('--series-3')];
+  const max=Math.max(...rows.map(r=>r.count))||1;
+  const rowH=42, W=560, L=6, R=54, H=rows.length*rowH+8;
+
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Committed actions by evidence source">
+  ${rows.map((r,i)=>{
+    const v=r.count, y=i*rowH+8, bw=Math.max(3,(v/max)*(W-L-R));
+    const col = r.source==='unattributed' ? css('--critical') : colors[i%3];
+    return `<text x="${L}" y="${y+11}" font-size="12" fill="var(--ink-2)">${esc(EV_LABEL[r.source]||r.source)}</text>
+      <rect x="${L}" y="${y+17}" width="${bw.toFixed(1)}" height="12" rx="4" fill="${col}"
+        data-s="${esc(r.source)}" data-v="${v}"/>
+      <text x="${L+bw+9}" y="${y+27}" font-size="12.5" font-weight="600" fill="var(--ink)">${v}</text>`;
+  }).join('')}
+  </svg>`;
+
+  lg.innerHTML = rows.map((r,i)=>{
+    const col = r.source==='unattributed' ? css('--critical') : colors[i%3];
+    return `<span><i style="background:${col}"></i>${esc(EV_LABEL[r.source]||r.source)}</span>`;
+  }).join('');
+
+  el.querySelectorAll('rect[data-s]').forEach(b=>{
+    b.addEventListener('mousemove', ev=>showTip(
+      `<b>${esc(EV_LABEL[b.dataset.s]||b.dataset.s)}</b>${b.dataset.v} committed action(s)`, ev));
+    b.addEventListener('mouseleave', hideTip);
+  });
+}
 
 function fill(id, rows, render){
-  const t = document.querySelector('#'+id);
-  const b = t.querySelector('tbody');
-  if(!rows || !rows.length){
-    b.innerHTML = `<tr><td colspan="9" class="empty">nothing recorded yet</td></tr>`;
-    return;
-  }
-  b.innerHTML = rows.map(render).join('');
+  const b = $('#'+id).querySelector('tbody');
+  b.innerHTML = (rows && rows.length)
+    ? rows.map(render).join('')
+    : `<tr><td colspan="9" class="empty">nothing recorded yet</td></tr>`;
 }
 
-// The evidence column is the point of the whole project: a committed intent
-// must cite what proved the action happened, not merely assert that it did.
-function evidence(i){
+function evidenceOf(i){
   if(!i.outcome) return '<span class="empty">—</span>';
   try{
-    const o = JSON.parse(i.outcome);
-    if(o.evidence) return esc(o.evidence) + (o.audit_id ? ' <code>'+esc(o.audit_id.slice(0,8))+'</code>' : '');
-    if(o.reason) return esc(trunc(o.reason, 70));
-    return '<code>'+esc(trunc(i.outcome, 60))+'</code>';
-  }catch(e){ return '<code>'+esc(trunc(i.outcome,60))+'</code>'; }
+    const o=JSON.parse(i.outcome);
+    if(o.evidence) return esc(EV_LABEL[o.evidence]||o.evidence)
+      + (o.audit_id ? ' <code>'+esc(o.audit_id.slice(0,8))+'</code>' : '');
+    if(o.reason) return esc(trunc(o.reason,64));
+    return '<code>'+esc(trunc(i.outcome,52))+'</code>';
+  }catch(e){ return '<code>'+esc(trunc(i.outcome,52))+'</code>'; }
 }
 
-async function load(){
-  let s;
-  try{
-    const r = await fetch('/api/state');
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    s = await r.json();
-  }catch(e){
-    document.querySelector('#foot').textContent = 'failed to load: '+e.message;
-    return;
+function render(s){
+  window.__last = s;
+  const inFlight=(s.intents||[]).filter(i=>i.state==='PENDING' && !i.external_ref);
+  const al=$('#alert');
+  if(inFlight.length){
+    al.className='diverged';
+    al.innerHTML=`<div class="t"><span class="dot"></span>${inFlight.length} action(s) in flight, unrecorded</div>
+      <div class="d">The external world may already have changed and the agent's memory does not know.
+      A system without a durable intent log would repeat these on restart.
+      The reconciler will verify them against the real audit log and settle them without acting again.</div>`;
+  } else {
+    al.className='settled';
+    al.innerHTML=`<div class="t"><span class="dot"></span>Memory matches reality</div>
+      <div class="d">Every recorded action cites external evidence that it happened.
+      Nothing is in flight and unaccounted for.</div>`;
   }
 
-  const t = s.totals || {};
-  document.querySelector('#tiles').innerHTML = [
-    ['Episodes', t.episodes], ['Pinned', t.pinned], ['Committed', t.committed],
-    ['Pending', t.pending], ['Failed', t.failed], ['Playbooks', t.playbooks]
-  ].map(([k,v]) => `<div class="tile"><b>${v ?? 0}</b><span>${k}</span></div>`).join('');
+  const t=s.totals||{};
+  const tiles=[
+    ['Episodes',t.episodes,''],['Pinned forever',t.pinned,''],
+    ['Actions committed',t.committed,''],['Playbooks learned',t.playbooks,''],
+    ['In flight',t.pending,'hero'+(t.pending?' bad':'')],
+    ['Needs a human',t.failed,'hero'+(t.failed?' bad':'')]
+  ];
+  $('#tiles').innerHTML = tiles.map(([k,v,cls])=>
+    `<div class="tile ${cls}"><b>${v??0}</b><span>${k}</span></div>`).join('');
 
-  fill('intents', s.intents, i => `<tr>
-    <td><span class="pill ${esc(i.state)}">${esc(i.state)}</span></td>
+  growthChart(s.growth);
+  evidenceChart(s.evidence);
+
+  fill('intents', s.intents, i=>`<tr class="${i.state==='PENDING'&&!i.external_ref?'live':''}">
+    <td><span class="pill ${esc(i.state)}"><span class="dot"></span>${esc(i.state)}</span></td>
     <td>${esc(i.action_type)}</td>
-    <td><code>${esc(i.idem_key.slice(0,20))}…</code></td>
-    <td>${i.external_ref ? '<code>'+esc(trunc(i.external_ref,28))+'</code>' : '<span class="empty">—</span>'}</td>
-    <td>${i.attempts}</td>
-    <td>${evidence(i)}</td></tr>`);
+    <td><code>${esc(i.idem_key.slice(0,18))}…</code></td>
+    <td>${i.external_ref?'<code>'+esc(trunc(i.external_ref,26))+'</code>':'<span class="empty">—</span>'}</td>
+    <td>${i.attempts}</td><td>${evidenceOf(i)}</td></tr>`);
 
-  fill('episodes', s.episodes, e => `<tr>
+  fill('episodes', s.episodes, e=>`<tr>
     <td><span class="pill ${esc(e.status)}">${esc(e.status)}</span></td>
-    <td>${esc(trunc(e.symptom,60))}</td>
-    <td>${esc(trunc(e.outcome,30)) || '<span class="empty">—</span>'}</td>
+    <td>${esc(trunc(e.symptom,58))}</td>
+    <td>${esc(trunc(e.outcome,26))||'<span class="empty">—</span>'}</td>
     <td>${Number(e.salience).toFixed(2)}</td>
     <td class="${e.pinned?'pin':'nopin'}">${e.pinned?'pinned':'decays'}</td></tr>`);
 
-  fill('playbooks', s.playbooks, p => `<tr>
-    <td>${esc(trunc(p.title,60))}</td>
+  fill('playbooks', s.playbooks, p=>`<tr>
+    <td>${esc(trunc(p.title,54))}</td>
     <td>${Number(p.confidence).toFixed(3)}</td>
     <td>${p.derived_from_count} episodes</td>
-    <td><code>${esc(trunc(p.steps,70))}</code></td></tr>`);
+    <td><code>${esc(trunc(p.steps,64))}</code></td></tr>`);
 
-  fill('contention', s.contention, c => `<tr>
+  fill('contention', s.contention, c=>`<tr>
     <td>${esc(c.table)||'—'}</td><td>${esc(c.index)||'—'}</td>
     <td>${c.count}</td><td>${esc(c.cumulative_wait)}</td></tr>`);
 
-  document.querySelector('#foot').textContent =
-    'generated ' + s.generated_at + ' · refreshes every 5s';
+  $('#foot').textContent='generated '+s.generated_at+' · refreshes every 5s';
 }
-load(); setInterval(load, 5000);
+
+async function load(){
+  try{
+    const r=await fetch('/api/state');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    render(await r.json());
+  }catch(e){ $('#foot').textContent='failed to load: '+e.message; }
+}
+load(); setInterval(load,5000);
 </script>
 </body>
 </html>
