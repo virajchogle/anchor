@@ -207,6 +207,7 @@ aws logs tail /aws/lambda/anchor-panel --follow    # structured JSON logs
 
 ## Documentation
 
+- [`docs/RUNBOOK.md`](docs/RUNBOOK.md) demo script, verified end to end
 - [`docs/protocol.md`](docs/protocol.md) the protocol and its crash-point failure matrix
 - [`docs/architecture.md`](docs/architecture.md) diagram and component walkthrough
 - [`docs/RESULTS.md`](docs/RESULTS.md) generated benchmark output
