@@ -62,7 +62,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/timetravel", s.handleTimeTravel)
 	mux.HandleFunc("GET /api/incident", s.handleIncident)
 	mux.HandleFunc("GET /api/live", s.handleLive)
-	mux.Handle("GET /", http.FileServer(http.FS(assets)))
+	mux.Handle("GET /", noStore(http.FileServer(http.FS(assets))))
 	return s.withLogging(mux)
 }
 
@@ -78,6 +78,16 @@ func (s *Server) withLogging(next http.Handler) http.Handler {
 			"request_id", r.Header.Get("X-Request-Id"),
 			"method", r.Method, "path", r.URL.Path,
 			"status", rec.status, "latency_ms", time.Since(start).Milliseconds())
+	})
+}
+
+// noStore keeps browsers from serving a stale page. The panel refreshes itself,
+// so a cached copy is never what the viewer wants, and a stale bundle is
+// indistinguishable from a broken deployment.
+func noStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store, must-revalidate")
+		next.ServeHTTP(w, r)
 	})
 }
 
