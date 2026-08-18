@@ -115,6 +115,25 @@ Say: most agent frameworks have two answers, done and not done. The third answer
 "I do not know, a human should look", is what keeps an agent from either doing
 something twice or lying in its own history.
 
+### 4b. Closing the loop (optional, 20 seconds)
+
+An escalation is not a dead end. It is a work item for a person:
+
+```sh
+go run ./cmd/anchorctl escalations
+```
+
+It prints the intent and the full reason the agent refused to decide. Then the
+operator records their judgement:
+
+```sh
+go run ./cmd/anchorctl resolve <idem_key> applied "audit entry confirms it; I accept authorship"
+```
+
+Point out that it is recorded as `human_operator` evidence, never as machine
+verification, so nobody later mistakes a person's assertion for an audit-log
+fact. The dashboard returns to green.
+
 ### 5. Numbers (2:20 to 2:50)
 
 Sidebar → **Time travel**, click "5 minutes ago", show what the agent believed
@@ -146,6 +165,9 @@ Do not quote anything that is not on this list.
 - **Demo says user already exists**: `go run ./cmd/demo -cleanup`
 - **Everything looks stuck**: the reconciler is idempotent, just run
   `go run ./cmd/demo -reconcile` again.
+- **An intent is stuck PENDING and reconciling will not clear it**: that is an
+  escalation and it is meant to need you. `go run ./cmd/anchorctl escalations`
+  shows why, then `anchorctl resolve <key> applied|failed "<note>"` closes it.
 
 ## After recording
 

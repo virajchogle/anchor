@@ -771,6 +771,10 @@ func verifyDetail(outcome, extRef string) string {
 		src = "the CockroachDB Cloud audit log"
 	case strings.Contains(outcome, "sql_user_list"):
 		src = "a live resource listing"
+	case strings.Contains(outcome, "human_operator"):
+		// Recorded as a person's judgement, never dressed up as machine
+		// verification, so nobody later mistakes an assertion for an audit fact.
+		src = "an operator's judgement"
 	}
 	if extRef != "" {
 		return "Confirmed against " + src + ". Reference " + safeCut(extRef, 40) + "."
