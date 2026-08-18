@@ -104,13 +104,17 @@ rather than asserted.
 Two or more CockroachDB tools and one or more AWS services are required. Every
 row points at the file and function that satisfies it.
 
-### CockroachDB tools (3 of 4 used)
+### CockroachDB tools (2 of 4 integrated)
+
+The requirement is two or more. Two are integrated and tested; the other two rows
+say plainly what they are, because a claim a reviewer cannot verify is worth less
+than an honest omission.
 
 | Tool | Where | What the agent actually does with it |
 |---|---|---|
 | **Distributed Vector Indexing** | [`db/schema.sql`](db/schema.sql), [`internal/memory/recall.go`](internal/memory/recall.go) | `CREATE VECTOR INDEX ... (scope_key, status, embedding vector_cosine_ops)` over 1024-dimension Titan embeddings. Recall filters on prefix columns only and applies salience and recency in Go, because a non-prefix predicate silently disqualifies the index. Index use is proven by `EXPLAIN` assertions at 2000 rows in [`recall_test.go`](internal/memory/recall_test.go), and both documented traps are pinned as regressions. |
 | **ccloud CLI** | [`internal/ccloud/client.go`](internal/ccloud/client.go), [`internal/ccloud/action_sqluser.go`](internal/ccloud/action_sqluser.go) | The agent's action surface. It provisions scoped diagnostic SQL users during an incident and then verifies them against the organization audit log (`ccloud audit list`), matching on a username derived from the idempotency key. Live tests in [`action_sqluser_live_test.go`](internal/ccloud/action_sqluser_live_test.go) run against a real cluster. |
-| **Cloud Managed MCP Server** | [`docs/mcp.md`](docs/mcp.md) | Read-only operator audit path. Kept strictly read-only: the agent writes through the protocol, humans inspect through MCP. |
+| Cloud Managed MCP Server | [`docs/mcp.md`](docs/mcp.md) | **Documented, not demonstrated.** The intended read-only operator audit path, with the configuration and the operator queries written up. We did not stand up a live connection, so it is not claimed as one of the two required tools. |
 | Agent Skills Repo | not used | Deliberately skipped. A thin integration added to lengthen a list is worse than an honest omission. |
 
 ### AWS services
